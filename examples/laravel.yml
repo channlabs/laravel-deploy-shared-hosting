@@ -15,14 +15,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 🚀 Laravel Shared Hosting Deploy
-        uses: channlabs/laravel-shared-hosting-deployer@v2
+        uses: channlabs/laravel-deploy-shared-hosting@v2
         with:
           ftp-server: ${{ secrets.FTP_SERVER }}
           ftp-username: ${{ secrets.FTP_USERNAME }}
           ftp-password: ${{ secrets.FTP_PASSWORD }}
-          ftp-directory: "/public_html" # Sesuaikan dengan folder root domain Anda di cPanel
-          deploy-url: "my-laravel-app.com" # URL publik aplikasi Anda
-          deploy-token: ${{ secrets.DEPLOY_TOKEN }} # Token aman buatan Anda sendiri (misal SHA256/UUID)
+          ftp-directory: "/public_html" # Sesuaikan dengan folder root domain di cPanel
+          deploy-url: "my-laravel-app.com" # URL publik aplikasi
+          deploy-token: ${{ secrets.DEPLOY_TOKEN }} # Token aman buatan sendiri (misal SHA256/UUID)
           php-version: "8.4"
           node-version: "24"
           pnpm-version: "10"

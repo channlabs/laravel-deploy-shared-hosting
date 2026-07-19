@@ -21,7 +21,7 @@ jobs:
           version: 10
 
       - name: 🚀 Laravel Shared Hosting Deploy
-        uses: channlabs/laravel-shared-hosting-deployer@v2
+        uses: channlabs/laravel-deploy-shared-hosting@v1
         with:
           ftp-server: ${{ secrets.FTP_SERVER }}
           ftp-username: ${{ secrets.FTP_USERNAME }}
