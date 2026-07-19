@@ -1,0 +1,143 @@
+name: 'Laravel Deploy to Shared Hosting via ZIP'
+description: 'Build assets, compress project, and securely deploy to shared hosting using passive FTP with auto-artisan triggers.'
+author: 'Chann Labs Creative Studio'
+
+inputs:
+  ftp-server:
+    description: 'FTP Server Hostname / IP Address'
+    required: true
+  ftp-username:
+    description: 'FTP Account Username'
+    required: true
+  ftp-password:
+    description: 'FTP Account Password'
+    required: true
+  deploy-url:
+    description: 'The target domain/subdomain URL to trigger unzip (e.g., staging.dobha.com)'
+    required: true
+  php-version:
+    description: 'PHP Version to build project'
+    required: false
+    default: '8.4'
+  node-version:
+    description: 'Node.js Version for frontend building'
+    required: false
+    default: '24'
+  pnpm-version:
+    description: 'PNPM CLI version'
+    required: false
+    default: '9'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 🛠️ Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: ${{ inputs.php-version }}
+        extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql
+        coverage: none
+
+    - name: 📦 Install Composer Dependencies
+      shell: bash
+      run: composer install --no-ansi --no-dev --no-interaction --no-plugins --no-progress --no-scripts --optimize-autoloader
+
+    - name: 🔑 Copy .env file
+      shell: bash
+      run: php -r "file_exists('.env') || copy('.env.example', '.env');"
+
+    - name: 🏗️ Setup pnpm
+      uses: pnpm/action-setup@v4
+      with:
+        version: ${{ inputs.pnpm-version }}
+
+    - name: 🏗️ Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: 'pnpm'
+
+    - name: ⚡ Build Assets (Vite)
+      shell: bash
+      run: |
+        pnpm install
+        pnpm run build
+        rm -f public/hot
+
+    - name: 📦 Compress Files & Create Unzip Script
+      shell: bash
+      run: |
+        cat << 'EOF' > unzip.php
+        <?php
+        $zipFile = __DIR__ . '/../deploy.zip';
+        if (file_exists($zipFile)) {
+            $zip = new ZipArchive;
+            if ($zip->open($zipFile) === TRUE) {
+                $zip->extractTo(__DIR__ . '/../');
+                $zip->close();
+                unlink($zipFile);
+                $requiredDirs = [
+                    __DIR__ . '/../bootstrap/cache',
+                    __DIR__ . '/../storage/framework/cache/data',
+                    __DIR__ . '/../storage/framework/sessions',
+                    __DIR__ . '/../storage/framework/views',
+                    __DIR__ . '/../storage/logs'
+                ];
+                foreach ($requiredDirs as $dir) {
+                    if (!is_dir($dir)) {
+                        mkdir($dir, 0775, true);
+                    }
+                }
+                $cacheFiles = [
+                    __DIR__ . '/../bootstrap/cache/config.php',
+                    __DIR__ . '/../bootstrap/cache/routes-v7.php',
+                    __DIR__ . '/../bootstrap/cache/packages.php',
+                    __DIR__ . '/../bootstrap/cache/services.php'
+                ];
+                foreach ($cacheFiles as $file) {
+                    if (file_exists($file)) {
+                        unlink($file);
+                    }
+                }
+                try {
+                    require __DIR__ . '/../vendor/autoload.php';
+                    $app = require_once __DIR__ . '/../bootstrap/app.php';
+                    $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+                    $statusMigrate = $kernel->call('migrate', ['--force' => true]);
+                    echo "MIGRATE: " . ($statusMigrate === 0 ? "SUCCESS" : "FAILED (" . $statusMigrate . ")") . "\n";
+                    $statusOptimize = $kernel->call('optimize');
+                    echo "OPTIMIZE: " . ($statusOptimize === 0 ? "SUCCESS" : "FAILED (" . $statusOptimize . ")") . "\n";
+                } catch (\Exception $e) {
+                    echo "ARTISAN_ERROR: " . $e->getMessage() . "\n";
+                }
+            } else {
+                echo "FAILED_OPEN_ZIP\n";
+            }
+        } else {
+            echo "ZIP_NOT_FOUND\n";
+        }
+        unlink(__FILE__);
+        EOF
+        
+        zip -r deploy.zip . -x "node_modules/*" -x "*/node_modules/*" -x ".git/*" -x "*/.git/*" -x ".github/*" -x "*/.github/*" -x ".env" -x "bootstrap/cache/*" -x "*/bootstrap/cache/*" -x "storage/framework/cache/data/*" -x "*/storage/framework/cache/data/*" -x "storage/framework/sessions/*" -x "*/storage/framework/sessions/*" -x "storage/framework/views/*" -x "*/storage/framework/views/*" -x "storage/logs/*" -x "*/storage/logs/*" -x "tests/*" -x "*/tests/*"
+
+    - name: 🛠️ Install LFTP
+      shell: bash
+      run: sudo apt-get update && sudo apt-get install -y lftp
+
+    - name: 📂 Upload ZIP via LFTP
+      shell: bash
+      run: |
+        lftp -c "
+        set ftp:passive-mode true;
+        set ssl:verify-certificate false;
+        open -u '${{ inputs.ftp-username }}','${{ inputs.ftp-password }}' '${{ inputs.ftp-server }}';
+        put deploy.zip;
+        cd public;
+        put unzip.php;
+        "
+
+    - name: 🚀 Extract ZIP on Host Server
+      shell: bash
+      run: |
+        curl -s -f "https://${{ inputs.deploy-url }}/unzip.php"
