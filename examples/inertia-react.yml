@@ -1,0 +1,38 @@
+name: Deploy Laravel Inertia React
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: 🚀 Deploy Inertia React App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🚚 Checkout Code
+        uses: actions/checkout@v4
+
+      # Menggunakan pnpm/action-setup jika menggunakan pnpm
+      - name: ⚡ Setup PNPM
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: 🚀 Laravel Shared Hosting Deploy
+        uses: channlabs/laravel-shared-hosting-deployer@v2
+        with:
+          ftp-server: ${{ secrets.FTP_SERVER }}
+          ftp-username: ${{ secrets.FTP_USERNAME }}
+          ftp-password: ${{ secrets.FTP_PASSWORD }}
+          ftp-directory: "/subdomain.domain.com"
+          deploy-url: "subdomain.domain.com"
+          deploy-token: ${{ secrets.DEPLOY_TOKEN }}
+          php-version: "8.3"
+          node-version: "22"
+          pnpm-version: "10"
+          run-migrations: "true"
+          optimize: "true"
+          maintenance: "true" # Sangat disarankan bernilai true untuk mencegah user mengakses asset setengah jadi saat diekstrak
+          health-check: "true"

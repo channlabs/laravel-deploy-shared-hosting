@@ -1,0 +1,33 @@
+name: Deploy Laravel Livewire
+
+on:
+  push:
+    branches:
+      - main
+      - staging
+
+jobs:
+  deploy:
+    name: 🚀 Deploy Livewire App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🚚 Checkout Code
+        uses: actions/checkout@v4
+
+      - name: 🚀 Laravel Shared Hosting Deploy
+        uses: channlabs/laravel-shared-hosting-deployer@v2
+        with:
+          # Menggunakan secrets dinamis berdasarkan branch (Production vs Staging)
+          ftp-server: ${{ github.ref_name == 'main' && secrets.FTP_SERVER || secrets.FTP_SERVER_STAGING }}
+          ftp-username: ${{ github.ref_name == 'main' && secrets.FTP_USERNAME || secrets.FTP_USERNAME_STAGING }}
+          ftp-password: ${{ github.ref_name == 'main' && secrets.FTP_PASSWORD || secrets.FTP_PASSWORD_STAGING }}
+          ftp-directory: ${{ github.ref_name == 'main' && '/public_html' || '/staging_html' }}
+          deploy-url: ${{ github.ref_name == 'main' && 'my-app.com' || 'staging.my-app.com' }}
+          deploy-token: ${{ secrets.DEPLOY_TOKEN }}
+          php-version: "8.4"
+          node-version: "24"
+          run-migrations: "true"
+          optimize: "true"
+          maintenance: "true"
+          health-check: "true"

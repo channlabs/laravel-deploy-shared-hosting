@@ -1,0 +1,426 @@
+<?php
+/**
+ * Laravel Shared Hosting Deployer
+ * Remote Deployment Script (Secure & Self-Cleaning)
+ *
+ * Generated automatically by GitHub Actions.
+ * Handles:
+ *  - Secure token validation
+ *  - Environment pre-flight checks (ZipArchive, Disk Space)
+ *  - Maintenance mode
+ *  - Atomic backups of current project files
+ *  - Extracting application and vendor archives (with caching)
+ *  - Clearing outdated bootstrap cache configurations
+ *  - Executing database migrations and optimizations
+ *  - Automatic rollback on deployment failure
+ *  - Self-deletion and cleanup
+ */
+
+// Disable client caching
+header('Cache-Control: no-cache, no-store, must-revalidate');
+header('Pragma: no-cache');
+header('Expires: 0');
+header('Content-Type: text/plain; charset=utf-8');
+
+// Configs templated by package.sh
+define('DEPLOY_TOKEN', '__DEPLOY_TOKEN__');
+define('APP_PACKAGE', '__PACKAGE__');
+define('VENDOR_HASH', '__VENDOR_HASH__');
+define('RUN_MIGRATIONS', filter_var('__RUN_MIGRATIONS__', FILTER_VALIDATE_BOOLEAN));
+define('OPTIMIZE', filter_var('__OPTIMIZE__', FILTER_VALIDATE_BOOLEAN));
+define('MAINTENANCE', filter_var('__MAINTENANCE__', FILTER_VALIDATE_BOOLEAN));
+
+// Helpers for printing messages
+function log_msg($message) {
+    echo "[" . date('H:i:s') . "] " . $message . "\n";
+    if (ob_get_level() > 0) {
+        ob_flush();
+    }
+    flush();
+}
+
+function log_error($message) {
+    echo "[" . date('H:i:s') . "] [ERROR] " . $message . "\n";
+    if (ob_get_level() > 0) {
+        ob_flush();
+    }
+    flush();
+}
+
+// 1. Secure Token Validation
+if (!isset($_GET['token']) || !hash_equals(DEPLOY_TOKEN, $_GET['token'])) {
+    http_response_code(403);
+    exit('ERROR: Unauthorized access.');
+}
+
+log_msg("Starting Laravel Remote Deployer v2...");
+
+$rootPath = dirname(__DIR__); // public/../ -> root path
+$zipFile = $rootPath . '/' . APP_PACKAGE;
+$deployScriptPath = __FILE__;
+
+// Register self-cleanup shutdown function
+register_shutdown_function(function() use ($deployScriptPath, $zipFile) {
+    // Clean up temporary script
+    if (file_exists($deployScriptPath)) {
+        @unlink($deployScriptPath);
+    }
+    // Clean up temporary app package ZIP
+    if (file_exists($zipFile)) {
+        @unlink($zipFile);
+    }
+});
+
+// Helper to delete recursively
+function delete_recursive($dir) {
+    if (!file_exists($dir)) {
+        return true;
+    }
+    if (!is_dir($dir)) {
+        return @unlink($dir);
+    }
+    foreach (scandir($dir) as $item) {
+        if ($item == '.' || $item == '..') {
+            continue;
+        }
+        if (!delete_recursive($dir . DIRECTORY_SEPARATOR . $item)) {
+            return false;
+        }
+    }
+    return @rmdir($dir);
+}
+
+// Helper to move item to backup safely
+function safe_move($source, $dest) {
+    if (file_exists($source)) {
+        if (!@rename($source, $dest)) {
+            throw new Exception("Failed to move $source to $dest");
+        }
+        return true;
+    }
+    return false;
+}
+
+// Rollback Logic
+function rollback($backupDir, $rootPath, $movedItems, $vendorUpdated) {
+    log_msg("Rollback triggered. Restoring files from backup...");
+    
+    // 1. Delete the new files/folders that were extracted
+    $standardDirs = ['app', 'bootstrap', 'config', 'resources', 'routes'];
+    if ($vendorUpdated) {
+        $standardDirs[] = 'vendor';
+    }
+    foreach ($standardDirs as $dir) {
+        $path = $rootPath . '/' . $dir;
+        if (file_exists($path)) {
+            delete_recursive($path);
+        }
+    }
+    
+    $standardFiles = ['composer.json', 'composer.lock', 'package.json', 'artisan'];
+    foreach ($standardFiles as $file) {
+        $path = $rootPath . '/' . $file;
+        if (file_exists($path)) {
+            @unlink($path);
+        }
+    }
+    
+    // Clean public directory except deploy.php
+    $publicPath = $rootPath . '/public';
+    if (is_dir($publicPath)) {
+        $files = scandir($publicPath);
+        foreach ($files as $file) {
+            if ($file === '.' || $file === '..' || $file === 'deploy.php') {
+                continue;
+            }
+            delete_recursive($publicPath . '/' . $file);
+        }
+    }
+    
+    // 2. Move files back from backup
+    foreach ($movedItems as $item => $originalPath) {
+        $backupPath = $backupDir . '/' . $item;
+        if (file_exists($backupPath)) {
+            if ($item === 'public') {
+                // Restore public contents
+                $files = scandir($backupPath);
+                foreach ($files as $file) {
+                    if ($file === '.' || $file === '..') {
+                        continue;
+                    }
+                    @rename($backupPath . '/' . $file, $originalPath . '/' . $file);
+                }
+            } else {
+                @rename($backupPath, $originalPath);
+            }
+        }
+    }
+    
+    // 3. Remove backup folder
+    delete_recursive($backupDir);
+    log_msg("Rollback completed successfully.");
+}
+
+// 2. Pre-flight checks
+log_msg("Running pre-flight checks...");
+
+// ZipArchive check
+if (!class_exists('ZipArchive')) {
+    http_response_code(500);
+    log_error("ZipArchive PHP extension is not installed/enabled on this server.");
+    exit(1);
+}
+
+// Determine if vendor folder needs update
+$vendorZipFile = $rootPath . '/_vendor_cache/vendor-' . VENDOR_HASH . '.zip';
+$vendorUpdated = false;
+$existingVendorChecksum = $rootPath . '/vendor/checksum.txt';
+$currentChecksum = file_exists($existingVendorChecksum) ? trim(file_get_contents($existingVendorChecksum)) : '';
+
+if (!is_dir($rootPath . '/vendor') || $currentChecksum !== VENDOR_HASH) {
+    $vendorUpdated = true;
+}
+
+// Disk space check
+$requiredSpace = 0;
+if (file_exists($zipFile)) {
+    $requiredSpace += filesize($zipFile) * 2.5; // app zip + extraction safety factor
+}
+if ($vendorUpdated && file_exists($vendorZipFile)) {
+    $requiredSpace += filesize($vendorZipFile) * 2.5; // vendor zip + extraction safety factor
+}
+
+$freeSpace = @disk_free_space($rootPath);
+if ($freeSpace !== false && $freeSpace < $requiredSpace) {
+    $freeSpaceMB = round($freeSpace / (1024 * 1024), 2);
+    $requiredSpaceMB = round($requiredSpace / (1024 * 1024), 2);
+    http_response_code(500);
+    log_error("Insufficient disk space. Free space: {$freeSpaceMB}MB, Estimate required: {$requiredSpaceMB}MB");
+    exit(1);
+}
+
+success("Pre-flight checks passed (ZipArchive available, space OK).");
+
+// 3. Maintenance Mode
+if (MAINTENANCE) {
+    log_msg("Enabling maintenance mode...");
+    $storageFramework = $rootPath . '/storage/framework';
+    if (!is_dir($storageFramework)) {
+        @mkdir($storageFramework, 0755, true);
+    }
+    $downPayload = [
+        'time' => time(),
+        'status' => 503,
+        'secret' => null,
+        'retry' => null,
+        'refresh' => null,
+    ];
+    file_put_contents($storageFramework . '/down', json_encode($downPayload, JSON_PRETTY_PRINT));
+}
+
+// 4. Backup current deployment files
+$backupDir = $rootPath . '/_backup_' . time();
+if (!@mkdir($backupDir, 0755, true)) {
+    log_error("Failed to create backup directory.");
+    if (MAINTENANCE) {
+        @unlink($rootPath . '/storage/framework/down');
+    }
+    exit(1);
+}
+
+$movedItems = [];
+try {
+    log_msg("Backing up current deployment files...");
+    
+    // Core Laravel directories to backup
+    $dirsToBackup = ['app', 'bootstrap', 'config', 'resources', 'routes'];
+    if ($vendorUpdated) {
+        $dirsToBackup[] = 'vendor';
+    }
+    
+    foreach ($dirsToBackup as $dir) {
+        $src = $rootPath . '/' . $dir;
+        $dest = $backupDir . '/' . $dir;
+        if (safe_move($src, $dest)) {
+            $movedItems[$dir] = $src;
+        }
+    }
+    
+    // Core Laravel files to backup
+    $filesToBackup = ['composer.json', 'composer.lock', 'package.json', 'artisan'];
+    foreach ($filesToBackup as $file) {
+        $src = $rootPath . '/' . $file;
+        $dest = $backupDir . '/' . $file;
+        if (safe_move($src, $dest)) {
+            $movedItems[$file] = $src;
+        }
+    }
+    
+    // Backup public folder files (except deploy.php)
+    $publicSrc = $rootPath . '/public';
+    if (is_dir($publicSrc)) {
+        $publicDest = $backupDir . '/public';
+        if (@mkdir($publicDest, 0755, true)) {
+            $movedItems['public'] = $publicSrc;
+            $files = scandir($publicSrc);
+            foreach ($files as $file) {
+                if ($file === '.' || $file === '..' || $file === 'deploy.php') {
+                    continue;
+                }
+                safe_move($publicSrc . '/' . $file, $publicDest . '/' . $file);
+            }
+        }
+    }
+    
+    log_msg("Backup completed successfully.");
+} catch (Exception $e) {
+    log_error("Backup failed: " . $e->getMessage());
+    rollback($backupDir, $rootPath, $movedItems, $vendorUpdated);
+    if (MAINTENANCE) {
+        @unlink($rootPath . '/storage/framework/down');
+    }
+    exit(1);
+}
+
+// 5. Extract Packages
+try {
+    log_msg("Extracting application package...");
+    
+    if (!file_exists($zipFile)) {
+        throw new Exception("App package zip file not found: " . $zipFile);
+    }
+    
+    $zip = new ZipArchive;
+    if ($zip->open($zipFile) === TRUE) {
+        $zip->extractTo($rootPath);
+        $zip->close();
+        log_msg("Application package extracted successfully.");
+    } else {
+        throw new Exception("Failed to open application package ZIP file.");
+    }
+    
+    // Extract vendor if updated or missing
+    if ($vendorUpdated) {
+        log_msg("Extracting vendor package...");
+        if (!file_exists($vendorZipFile)) {
+            throw new Exception("Vendor package zip not found in cache: " . $vendorZipFile);
+        }
+        
+        $zipVendor = new ZipArchive;
+        if ($zipVendor->open($vendorZipFile) === TRUE) {
+            $zipVendor->extractTo($rootPath);
+            $zipVendor->close();
+            
+            // Create vendor dir and checksum
+            if (!is_dir($rootPath . '/vendor')) {
+                @mkdir($rootPath . '/vendor', 0755, true);
+            }
+            file_put_contents($rootPath . '/vendor/checksum.txt', VENDOR_HASH);
+            log_msg("Vendor package extracted successfully.");
+        } else {
+            throw new Exception("Failed to open vendor package ZIP file.");
+        }
+    } else {
+        log_msg("Vendor is up to date. Re-using existing vendor folder.");
+    }
+    
+    // Ensure required storage directories exist
+    $requiredDirs = [
+        $rootPath . '/bootstrap/cache',
+        $rootPath . '/storage/framework/cache/data',
+        $rootPath . '/storage/framework/sessions',
+        $rootPath . '/storage/framework/views',
+        $rootPath . '/storage/logs'
+    ];
+    foreach ($requiredDirs as $dir) {
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+    }
+} catch (Exception $e) {
+    log_error("Extraction failed: " . $e->getMessage());
+    rollback($backupDir, $rootPath, $movedItems, $vendorUpdated);
+    if (MAINTENANCE) {
+        @unlink($rootPath . '/storage/framework/down');
+    }
+    exit(1);
+}
+
+// 6. Laravel Artisan Operations (Migrations & Optimizations)
+log_msg("Clearing outdated bootstrap caches...");
+$cacheFiles = [
+    $rootPath . '/bootstrap/cache/config.php',
+    $rootPath . '/bootstrap/cache/routes-v7.php',
+    $rootPath . '/bootstrap/cache/routes.php',
+    $rootPath . '/bootstrap/cache/packages.php',
+    $rootPath . '/bootstrap/cache/services.php',
+    $rootPath . '/bootstrap/cache/compiled.php'
+];
+foreach ($cacheFiles as $file) {
+    if (file_exists($file)) {
+        @unlink($file);
+    }
+}
+
+try {
+    log_msg("Booting Laravel environment...");
+    
+    if (!file_exists($rootPath . '/vendor/autoload.php') || !file_exists($rootPath . '/bootstrap/app.php')) {
+        throw new Exception("Critical Laravel files (vendor/autoload.php or bootstrap/app.php) are missing.");
+    }
+    
+    require $rootPath . '/vendor/autoload.php';
+    $app = require_once $rootPath . '/bootstrap/app.php';
+    $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+    
+    if (RUN_MIGRATIONS) {
+        log_msg("Running database migrations...");
+        $statusMigrate = $kernel->call('migrate', ['--force' => true]);
+        if ($statusMigrate !== 0) {
+            throw new Exception("Artisan migrate failed with exit code: " . $statusMigrate);
+        }
+        log_msg("Database migrations ran successfully.");
+    }
+    
+    if (OPTIMIZE) {
+        log_msg("Running artisan optimize...");
+        $statusOptimize = $kernel->call('optimize');
+        if ($statusOptimize !== 0) {
+            throw new Exception("Artisan optimize failed with exit code: " . $statusOptimize);
+        }
+        log_msg("Laravel optimized successfully.");
+    }
+    
+    // Recreate storage:link symlink if missing
+    if (!file_exists($rootPath . '/public/storage')) {
+        log_msg("Recreating storage:link symlink...");
+        if (function_exists('symlink')) {
+            @symlink('../storage/app/public', $rootPath . '/public/storage');
+        } else {
+            $kernel->call('storage:link');
+        }
+    }
+} catch (Exception $e) {
+    log_error("Laravel execution failed: " . $e->getMessage());
+    rollback($backupDir, $rootPath, $movedItems, $vendorUpdated);
+    if (MAINTENANCE) {
+        @unlink($rootPath . '/storage/framework/down');
+    }
+    exit(1);
+}
+
+// 7. Cleanup & Completion
+log_msg("Deployment succeeded. Cleaning up backup directory...");
+delete_recursive($backupDir);
+
+// Bring out of maintenance mode
+if (MAINTENANCE) {
+    log_msg("Disabling maintenance mode...");
+    $downFile = $rootPath . '/storage/framework/down';
+    if (file_exists($downFile)) {
+        @unlink($downFile);
+    }
+}
+
+log_msg("Deployment completed successfully.");
+?>

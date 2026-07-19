@@ -1,143 +1,267 @@
-name: 'Laravel Deploy to Shared Hosting via ZIP'
-description: 'Build assets, compress project, and securely deploy to shared hosting using passive FTP with auto-artisan triggers.'
-author: 'Chann Labs Creative Studio'
+name: "Laravel Shared Hosting Deploy"
+
+description: >
+  Production-ready GitHub Action for deploying Laravel applications
+  to traditional shared hosting environments via FTP.
+  Automatically builds frontend assets, packages the application,
+  uploads deployment archives, executes secure remote deployment,
+  performs migrations, optimizes Laravel caches and verifies
+  application health after deployment.
+
+author: Chann Labs Creative Studio
+
+branding:
+  icon: upload-cloud
+  color: purple
 
 inputs:
+
   ftp-server:
-    description: 'FTP Server Hostname / IP Address'
+    description: FTP server hostname or IP.
     required: true
+
   ftp-username:
-    description: 'FTP Account Username'
+    description: FTP username.
     required: true
+
   ftp-password:
-    description: 'FTP Account Password'
+    description: FTP password.
     required: true
+
+  ftp-directory:
+    description: Remote deployment directory.
+    required: false
+    default: "/"
+
   deploy-url:
-    description: 'The target domain/subdomain URL to trigger unzip (e.g., staging.dobha.com)'
+    description: Public deployment URL.
     required: true
+
+  deploy-token:
+    description: Secure deployment token.
+    required: true
+
   php-version:
-    description: 'PHP Version to build project'
-    required: false
-    default: '8.4'
+    description: PHP version.
+    default: "8.4"
+
   node-version:
-    description: 'Node.js Version for frontend building'
-    required: false
-    default: '24'
+    description: Node.js version.
+    default: "24"
+
   pnpm-version:
-    description: 'PNPM CLI version'
-    required: false
-    default: '9'
+    description: PNPM version.
+    default: "10"
+
+  run-migrations:
+    description: Execute database migrations.
+    default: "true"
+
+  optimize:
+    description: Optimize Laravel.
+    default: "true"
+
+  maintenance:
+    description: Enable maintenance mode.
+    default: "true"
+
+  health-check:
+    description: Perform health check.
+    default: "true"
+
+outputs:
+
+  deployment-url:
+    description: Final deployment URL.
+    value: ${{ inputs.deploy-url }}
 
 runs:
-  using: 'composite'
+
+  using: composite
+
   steps:
-    - name: 🛠️ Setup PHP
+
+    ##############################################
+    ## Setup PHP
+    ##############################################
+
+    - name: 🐘 Configure PHP
       uses: shivammathur/setup-php@v2
       with:
         php-version: ${{ inputs.php-version }}
-        extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql
+        extensions: >
+          mbstring,
+          xml,
+          ctype,
+          iconv,
+          intl,
+          pdo_mysql,
+          zip,
+          fileinfo
         coverage: none
+
+    ##############################################
+    ## Composer
+    ##############################################
 
     - name: 📦 Install Composer Dependencies
       shell: bash
-      run: composer install --no-ansi --no-dev --no-interaction --no-plugins --no-progress --no-scripts --optimize-autoloader
+      run: |
 
-    - name: 🔑 Copy .env file
+        composer validate --no-check-publish
+
+        composer install \
+          --prefer-dist \
+          --no-dev \
+          --optimize-autoloader \
+          --classmap-authoritative \
+          --no-interaction \
+          --no-progress
+
+    ##############################################
+    ## Environment
+    ##############################################
+
+    - name: 🔑 Prepare Environment
       shell: bash
-      run: php -r "file_exists('.env') || copy('.env.example', '.env');"
+      run: |
 
-    - name: 🏗️ Setup pnpm
+        if [ ! -f ".env" ]; then
+          cp .env.example .env
+        fi
+
+    ##############################################
+    ## PNPM
+    ##############################################
+
+    - name: ⚡ Setup PNPM
       uses: pnpm/action-setup@v4
       with:
         version: ${{ inputs.pnpm-version }}
 
-    - name: 🏗️ Setup Node.js
+    ##############################################
+    ## Node
+    ##############################################
+
+    - name: ⚙️ Configure Node.js
       uses: actions/setup-node@v4
       with:
         node-version: ${{ inputs.node-version }}
-        cache: 'pnpm'
+        cache: pnpm
 
-    - name: ⚡ Build Assets (Vite)
+    ##############################################
+    ## Build
+    ##############################################
+
+    - name: 🏗 Build Production Assets
       shell: bash
       run: |
-        pnpm install
-        pnpm run build
+
+        pnpm install --frozen-lockfile
+
+        pnpm build
+
         rm -f public/hot
 
-    - name: 📦 Compress Files & Create Unzip Script
+        pnpm store prune
+
+    ##############################################
+    ## Package
+    ##############################################
+
+    - name: 📦 Package Application
+      shell: bash
+      env:
+        DEPLOY_TOKEN: ${{ inputs.deploy-token }}
+        RUN_MIGRATIONS: ${{ inputs.run-migrations }}
+        OPTIMIZE: ${{ inputs.optimize }}
+        MAINTENANCE: ${{ inputs.maintenance }}
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
+      run: |
+
+        chmod +x ${{ github.action_path }}/scripts/package.sh
+
+        ${{ github.action_path }}/scripts/package.sh
+
+    ##############################################
+    ## Install LFTP
+    ##############################################
+
+    - name: 📥 Install LFTP
       shell: bash
       run: |
-        cat << 'EOF' > unzip.php
-        <?php
-        $zipFile = __DIR__ . '/../deploy.zip';
-        if (file_exists($zipFile)) {
-            $zip = new ZipArchive;
-            if ($zip->open($zipFile) === TRUE) {
-                $zip->extractTo(__DIR__ . '/../');
-                $zip->close();
-                unlink($zipFile);
-                $requiredDirs = [
-                    __DIR__ . '/../bootstrap/cache',
-                    __DIR__ . '/../storage/framework/cache/data',
-                    __DIR__ . '/../storage/framework/sessions',
-                    __DIR__ . '/../storage/framework/views',
-                    __DIR__ . '/../storage/logs'
-                ];
-                foreach ($requiredDirs as $dir) {
-                    if (!is_dir($dir)) {
-                        mkdir($dir, 0775, true);
-                    }
-                }
-                $cacheFiles = [
-                    __DIR__ . '/../bootstrap/cache/config.php',
-                    __DIR__ . '/../bootstrap/cache/routes-v7.php',
-                    __DIR__ . '/../bootstrap/cache/packages.php',
-                    __DIR__ . '/../bootstrap/cache/services.php'
-                ];
-                foreach ($cacheFiles as $file) {
-                    if (file_exists($file)) {
-                        unlink($file);
-                    }
-                }
-                try {
-                    require __DIR__ . '/../vendor/autoload.php';
-                    $app = require_once __DIR__ . '/../bootstrap/app.php';
-                    $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
-                    $statusMigrate = $kernel->call('migrate', ['--force' => true]);
-                    echo "MIGRATE: " . ($statusMigrate === 0 ? "SUCCESS" : "FAILED (" . $statusMigrate . ")") . "\n";
-                    $statusOptimize = $kernel->call('optimize');
-                    echo "OPTIMIZE: " . ($statusOptimize === 0 ? "SUCCESS" : "FAILED (" . $statusOptimize . ")") . "\n";
-                } catch (\Exception $e) {
-                    echo "ARTISAN_ERROR: " . $e->getMessage() . "\n";
-                }
-            } else {
-                echo "FAILED_OPEN_ZIP\n";
-            }
-        } else {
-            echo "ZIP_NOT_FOUND\n";
-        }
-        unlink(__FILE__);
-        EOF
+
+        sudo apt-get update
+
+        sudo apt-get install -y lftp
+
+    ##############################################
+    ## Upload
+    ##############################################
+
+    - name: 📤 Upload Deployment
+      shell: bash
+      env:
+        FTP_SERVER: ${{ inputs.ftp-server }}
+        FTP_USERNAME: ${{ inputs.ftp-username }}
+        FTP_PASSWORD: ${{ inputs.ftp-password }}
+        FTP_DIRECTORY: ${{ inputs.ftp-directory }}
+        GITHUB_ACTION_PATH: ${{ github.action_path }}
+      run: |
+
+        chmod +x ${{ github.action_path }}/scripts/upload.sh
+
+        ${{ github.action_path }}/scripts/upload.sh
+
+    ##############################################
+    ## Execute
+    ##############################################
+
+    - name: 🚀 Execute Deployment
+      shell: bash
+      run: |
+
+        echo "Executing remote deployment..."
+        RESPONSE=$(curl -sS -L --retry 5 --retry-delay 5 -w "\nHTTP_STATUS:%{http_code}" "https://${{ inputs.deploy-url }}/deploy.php?token=${{ inputs.deploy-token }}")
         
-        zip -r deploy.zip . -x "node_modules/*" -x "*/node_modules/*" -x ".git/*" -x "*/.git/*" -x ".github/*" -x "*/.github/*" -x ".env" -x "bootstrap/cache/*" -x "*/bootstrap/cache/*" -x "storage/framework/cache/data/*" -x "*/storage/framework/cache/data/*" -x "storage/framework/sessions/*" -x "*/storage/framework/sessions/*" -x "storage/framework/views/*" -x "*/storage/framework/views/*" -x "storage/logs/*" -x "*/storage/logs/*" -x "tests/*" -x "*/tests/*"
+        # Output the response body except the status code line
+        echo "$RESPONSE" | grep -v "HTTP_STATUS:"
+        
+        # Extract HTTP status code
+        STATUS_CODE=$(echo "$RESPONSE" | tr '\n' ' ' | sed -e 's/.*HTTP_STATUS://' | tr -d ' ')
+        
+        if [ "$STATUS_CODE" -ne 200 ]; then
+          echo "::error::Deployment execution failed with HTTP status code $STATUS_CODE"
+          exit 1
+        fi
 
-    - name: 🛠️ Install LFTP
-      shell: bash
-      run: sudo apt-get update && sudo apt-get install -y lftp
+    ##############################################
+    ## Health
+    ##############################################
 
-    - name: 📂 Upload ZIP via LFTP
-      shell: bash
-      run: |
-        lftp -c "
-        set ftp:passive-mode true;
-        set ssl:verify-certificate false;
-        open -u '${{ inputs.ftp-username }}','${{ inputs.ftp-password }}' '${{ inputs.ftp-server }}';
-        put deploy.zip;
-        cd public;
-        put unzip.php;
-        "
-
-    - name: 🚀 Extract ZIP on Host Server
+    - name: ❤️ Verify Deployment
+      if: inputs.health-check == 'true'
       shell: bash
       run: |
-        curl -s -f "https://${{ inputs.deploy-url }}/unzip.php"
+
+        chmod +x ${{ github.action_path }}/scripts/verify.sh
+
+        ${{ github.action_path }}/scripts/verify.sh \
+          "https://${{ inputs.deploy-url }}"
+
+    ##############################################
+    ## Cleanup
+    ##############################################
+
+    - name: 🧹 Cleanup Local Temporary Files
+      if: always()
+      shell: bash
+      run: |
+
+        echo "Cleaning up local temporary files..."
+        rm -f deploy.php
+        rm -f deploy-*.zip
+        rm -f vendor-*.zip
+        rm -f deploy-manifest.json
+        rm -f deploy.sha256
+        echo "Cleanup completed."
