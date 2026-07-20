@@ -107,9 +107,10 @@ set net:reconnect-interval-base 5
 set net:reconnect-interval-multiplier 2
 set cmd:fail-exit true
 
-# Ensure root directory exists
+# Ensure root directory and public directory exist
 mkdir -p "${FTP_DIRECTORY}"
 cd "${FTP_DIRECTORY}"
+mkdir -p public
 
 # Upload main app package and deploy.php
 echo "Uploading application package..."

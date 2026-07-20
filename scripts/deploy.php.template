@@ -53,7 +53,7 @@ if (!isset($_GET['token']) || !hash_equals(DEPLOY_TOKEN, $_GET['token'])) {
     exit('ERROR: Unauthorized access.');
 }
 
-log_msg("Starting Laravel Remote Deployer v2...");
+log_msg("Starting Laravel Remote Deployer v1...");
 
 $rootPath = dirname(__DIR__); // public/../ -> root path
 $zipFile = $rootPath . '/' . APP_PACKAGE;

@@ -15,7 +15,7 @@ Deployment konvensional menggunakan FTP biasa sering kali **macet, timeout, atau
 Action ini memecahkan masalah tersebut dengan **Metode ZIP-Express**:
 1. **Otomatisasi Penuh:** Menjalankan `composer install`, setup Node, dan kompilasi asset Vite (`pnpm run build`) langsung di infrastruktur GitHub.
 2. **Koneksi Kilat:** Mengompres seluruh project menjadi **satu file `.zip`** ringkas, lalu mengunggahnya via **LFTP Pasif (Port 21)** hanya dalam hitungan detik.
-3. **Ekstraksi & Optimalisasi Lokal:** Memasok skrip enkapsulasi PHP aman (`unzip.php`) untuk mengekstrak file di dalam hosting, otomatis membersihkan cache usang, memicu migrasi database (`php artisan migrate --force`), dan mengaktifkan optimasi performa (`php artisan optimize`).
+3. **Ekstraksi & Optimalisasi Lokal:** Memasok skrip enkapsulasi PHP aman (`deploy.php`) untuk mengekstrak file di dalam hosting, otomatis membersihkan cache usang, memicu migrasi database (`php artisan migrate --force`), dan mengaktifkan optimasi performa (`php artisan optimize`).
 
 ---
 

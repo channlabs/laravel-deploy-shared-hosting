@@ -7,7 +7,7 @@
 # Production Deployment Package Builder
 #
 # Author  : Chann Labs Creative Studio
-# Version : 2.0.0
+# Version : 1.0.0
 #
 ##############################################################################
 
@@ -83,7 +83,7 @@ echo
 echo -e "${BOLD}${WHITE}"
 echo "╔══════════════════════════════════════════════════════╗"
 echo "║                                                      ║"
-echo "║        Laravel Shared Hosting Deploy v2             ║"
+echo "║        Laravel Shared Hosting Deploy v1             ║"
 echo "║                                                      ║"
 echo "║      Production Deployment Package Builder          ║"
 echo "║                                                      ║"
@@ -756,7 +756,7 @@ generate_manifest() {
   "build_time": "${BUILD_TIME}",
   "package": "${PACKAGE_NAME}",
   "vendor_hash": "${COMPOSER_LOCK_HASH}",
-  "builder": "Laravel Shared Hosting Deploy v2"
+  "builder": "Laravel Shared Hosting Deploy v1"
 }
 EOF
 
