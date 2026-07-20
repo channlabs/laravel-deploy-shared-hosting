@@ -84,7 +84,7 @@ EOF
 
 if [[ "$FTP_DIRECTORY" != "/" ]]; then
     cat <<EOF >> "$CHECK_SCRIPT"
-mkdir -p "${FTP_DIRECTORY}"
+mkdir -f -p "${FTP_DIRECTORY}"
 cd "${FTP_DIRECTORY}"
 EOF
 else
@@ -94,7 +94,7 @@ EOF
 fi
 
 cat <<EOF >> "$CHECK_SCRIPT"
-mkdir -p _vendor_cache
+mkdir -f -p _vendor_cache
 cd _vendor_cache
 nlist "${VENDOR_PACKAGE_NAME}"
 quit
@@ -129,7 +129,7 @@ EOF
 
 if [[ "$FTP_DIRECTORY" != "/" ]]; then
     cat <<EOF >> "$LFTP_SCRIPT"
-mkdir -p "${FTP_DIRECTORY}"
+mkdir -f -p "${FTP_DIRECTORY}"
 cd "${FTP_DIRECTORY}"
 EOF
 else
@@ -140,7 +140,7 @@ fi
 
 cat <<EOF >> "$LFTP_SCRIPT"
 # Ensure public directory exists
-mkdir -p public
+mkdir -f -p public
 
 # Upload main app package and deploy.php
 echo "Uploading application package..."
@@ -157,7 +157,7 @@ if [[ "$UPLOAD_VENDOR" == "true" ]]; then
     fi
     cat <<EOF >> "$LFTP_SCRIPT"
 echo "Uploading vendor package to cache..."
-mkdir -p _vendor_cache
+mkdir -f -p _vendor_cache
 put "${VENDOR_PACKAGE_NAME}" -o "_vendor_cache/${VENDOR_PACKAGE_NAME}"
 EOF
 fi
