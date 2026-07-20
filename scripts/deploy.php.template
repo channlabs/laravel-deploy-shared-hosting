@@ -1,13 +1,13 @@
 <?php
 /**
  * Laravel Shared Hosting Deployer
- * Remote Deployment Script (Secure, Auto-Config & Self-Cleaning)
+ * Remote Deployment Engine (OOP, Secure, Auto-Config & Self-Cleaning)
  *
  * Generated automatically by GitHub Actions.
  * Author: Chann Labs Creative Studio
  */
 
-// Disable client caching
+// Disable client HTTP caching
 header('Cache-Control: no-cache, no-store, must-revalidate');
 header('Pragma: no-cache');
 header('Expires: 0');
@@ -20,205 +20,275 @@ define('RUN_MIGRATIONS', filter_var('__RUN_MIGRATIONS__', FILTER_VALIDATE_BOOLEA
 define('OPTIMIZE', filter_var('__OPTIMIZE__', FILTER_VALIDATE_BOOLEAN));
 define('MAINTENANCE', filter_var('__MAINTENANCE__', FILTER_VALIDATE_BOOLEAN));
 
-function log_msg($message) {
-    echo "[" . date('H:i:s') . "] " . $message . "\n";
-    if (ob_get_level() > 0) { @ob_flush(); }
-    @flush();
-}
+class RemoteDeployer
+{
+    private string $rootPath;
+    private string $zipFile;
+    private string $scriptPath;
 
-function log_error($message) {
-    echo "[" . date('H:i:s') . "] [ERROR] " . $message . "\n";
-    if (ob_get_level() > 0) { @ob_flush(); }
-    @flush();
-}
-
-// 1. Secure Token Validation
-if (defined('DEPLOY_TOKEN') && DEPLOY_TOKEN !== '' && DEPLOY_TOKEN !== '__DEPLOY_TOKEN__') {
-    if (!isset($_GET['token']) || !hash_equals(DEPLOY_TOKEN, $_GET['token'])) {
-        http_response_code(403);
-        exit('ERROR: Unauthorized access. Invalid deployment token.');
+    public function __construct()
+    {
+        $this->scriptPath = __FILE__;
+        $this->resolvePaths();
+        $this->registerCleanupHandler();
     }
-}
 
-$banner = <<<TEXT
-╔══════════════════════════════════════════════════════════════╗
-║              Laravel Deploy Shared Hosting                   ║
-║          Powered by Chann Labs Creative Studio               ║
-╚══════════════════════════════════════════════════════════════╝
-TEXT;
+    public function run(): void
+    {
+        $this->printBanner();
+        $this->validateToken();
+        $this->verifyRequirements();
+        $this->extractPackage();
+        $this->prepareDirectories();
+        $this->setupEnvironment();
+        $this->clearOutdatedCaches();
+        $this->ensureRootHtaccess();
+        $this->executeArtisanCommands();
 
-echo $banner . PHP_EOL . PHP_EOL;
-
-log_msg("🚀 Starting Remote Deployment...");
-
-// Determine root directory where ZIP package is located
-$rootPath = __DIR__;
-$zipFile = __DIR__ . '/' . APP_PACKAGE;
-
-if (!file_exists($zipFile) && file_exists(dirname(__DIR__) . '/' . APP_PACKAGE)) {
-    $rootPath = dirname(__DIR__);
-    $zipFile = $rootPath . '/' . APP_PACKAGE;
-}
-
-if (!file_exists($zipFile) && file_exists(__DIR__ . '/deploy.zip')) {
-    $zipFile = __DIR__ . '/deploy.zip';
-} elseif (!file_exists($zipFile) && file_exists(dirname(__DIR__) . '/deploy.zip')) {
-    $rootPath = dirname(__DIR__);
-    $zipFile = $rootPath . '/deploy.zip';
-}
-
-$deployScriptPath = __FILE__;
-
-// Register self-cleanup shutdown function
-register_shutdown_function(function() use ($deployScriptPath, $zipFile, $rootPath) {
-    if (file_exists($deployScriptPath)) { @unlink($deployScriptPath); }
-    if (file_exists($rootPath . '/deploy.php')) { @unlink($rootPath . '/deploy.php'); }
-    if (file_exists($rootPath . '/public/deploy.php')) { @unlink($rootPath . '/public/deploy.php'); }
-    if (file_exists($rootPath . '/unzip.php')) { @unlink($rootPath . '/unzip.php'); }
-    if (file_exists($rootPath . '/public/unzip.php')) { @unlink($rootPath . '/public/unzip.php'); }
-    if (file_exists($zipFile)) { @unlink($zipFile); }
-    if (file_exists($rootPath . '/deploy.zip')) { @unlink($rootPath . '/deploy.zip'); }
-});
-
-// 2. Server Module Check
-if (!class_exists('ZipArchive')) {
-    http_response_code(500);
-    log_error("ZipArchive PHP extension is missing on this server.");
-    exit(1);
-}
-
-if (!file_exists($zipFile)) {
-    http_response_code(404);
-    log_error("ZIP_NOT_FOUND: Application package ZIP file missing.");
-    exit(1);
-}
-
-// 3. Extract ZIP Archive
-$zip = new ZipArchive;
-if ($zip->open($zipFile) === TRUE) {
-    $zip->extractTo($rootPath);
-    $zip->close();
-    @unlink($zipFile);
-    log_msg("📦 Extracted application ZIP package.");
-} else {
-    http_response_code(500);
-    log_error("FAILED_OPEN_ZIP: Failed to open or extract ZIP archive.");
-    exit(1);
-}
-
-// 4. Ensure Storage & Bootstrap Cache Directories Exist
-$requiredDirs = [
-    $rootPath . '/bootstrap/cache',
-    $rootPath . '/storage/framework/cache/data',
-    $rootPath . '/storage/framework/sessions',
-    $rootPath . '/storage/framework/views',
-    $rootPath . '/storage/logs',
-    $rootPath . '/database'
-];
-foreach ($requiredDirs as $dir) {
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0775, true);
+        $this->log("✔ DEPLOYMENT SUCCESSFUL: Application is live.");
     }
-}
 
-// 5. Environment & Database Setup (.env & SQLite)
-$envFile = $rootPath . '/.env';
-$envExampleFile = $rootPath . '/.env.example';
-if (!file_exists($envFile) && file_exists($envExampleFile)) {
-    @copy($envExampleFile, $envFile);
-    log_msg("🔑 Initialized .env from .env.example");
-}
+    private function resolvePaths(): void
+    {
+        $this->rootPath = __DIR__;
+        $this->zipFile = __DIR__ . '/' . APP_PACKAGE;
 
-$sqliteFile = $rootPath . '/database/database.sqlite';
-if (!file_exists($sqliteFile)) {
-    @touch($sqliteFile);
-    log_msg("🗄️ Initialized database/database.sqlite");
-}
+        if (!file_exists($this->zipFile) && file_exists(dirname(__DIR__) . '/' . APP_PACKAGE)) {
+            $this->rootPath = dirname(__DIR__);
+            $this->zipFile = $this->rootPath . '/' . APP_PACKAGE;
+        }
 
-// 6. Clear Outdated Bootstrap Cache Files
-$cacheFiles = [
-    $rootPath . '/bootstrap/cache/config.php',
-    $rootPath . '/bootstrap/cache/routes-v7.php',
-    $rootPath . '/bootstrap/cache/routes.php',
-    $rootPath . '/bootstrap/cache/packages.php',
-    $rootPath . '/bootstrap/cache/services.php',
-    $rootPath . '/bootstrap/cache/compiled.php'
-];
-foreach ($cacheFiles as $file) {
-    if (file_exists($file)) {
-        @unlink($file);
+        if (!file_exists($this->zipFile)) {
+            $fallbackZip = file_exists(__DIR__ . '/deploy.zip')
+                ? __DIR__ . '/deploy.zip'
+                : (file_exists(dirname(__DIR__) . '/deploy.zip') ? dirname(__DIR__) . '/deploy.zip' : null);
+
+            if ($fallbackZip) {
+                $this->rootPath = dirname($fallbackZip);
+                $this->zipFile = $fallbackZip;
+            }
+        }
     }
-}
 
-// 7. Mod_Rewrite Fallback (.htaccess for Shared Hosting Root Document Root)
-$rootHtaccess = $rootPath . '/.htaccess';
-if (!file_exists($rootHtaccess)) {
-    $htaccessContent = "<IfModule mod_rewrite.c>\n" .
+    private function registerCleanupHandler(): void
+    {
+        register_shutdown_function(function () {
+            $cleanupFiles = [
+                $this->scriptPath,
+                $this->rootPath . '/deploy.php',
+                $this->rootPath . '/public/deploy.php',
+                $this->rootPath . '/unzip.php',
+                $this->rootPath . '/public/unzip.php',
+                $this->zipFile,
+                $this->rootPath . '/deploy.zip'
+            ];
+            foreach ($cleanupFiles as $file) {
+                if (file_exists($file)) {
+                    @unlink($file);
+                }
+            }
+        });
+    }
+
+    private function validateToken(): void
+    {
+        if (defined('DEPLOY_TOKEN') && DEPLOY_TOKEN !== '' && DEPLOY_TOKEN !== '__DEPLOY_TOKEN__') {
+            if (!isset($_GET['token']) || !hash_equals(DEPLOY_TOKEN, $_GET['token'])) {
+                http_response_code(403);
+                exit('ERROR: Unauthorized access. Invalid deployment token.');
+            }
+        }
+    }
+
+    private function verifyRequirements(): void
+    {
+        if (!class_exists('ZipArchive')) {
+            http_response_code(500);
+            $this->logError("ZipArchive PHP extension is missing on this server.");
+            exit(1);
+        }
+
+        if (!file_exists($this->zipFile)) {
+            http_response_code(404);
+            $this->logError("ZIP_NOT_FOUND: Application package missing.");
+            exit(1);
+        }
+    }
+
+    private function extractPackage(): void
+    {
+        $zip = new ZipArchive();
+        if ($zip->open($this->zipFile) === true) {
+            $zip->extractTo($this->rootPath);
+            $zip->close();
+            @unlink($this->zipFile);
+            $this->log("📦 Extracted application ZIP package.");
+        } else {
+            http_response_code(500);
+            $this->logError("FAILED_OPEN_ZIP: Failed to open ZIP archive.");
+            exit(1);
+        }
+    }
+
+    private function prepareDirectories(): void
+    {
+        $requiredDirs = [
+            $this->rootPath . '/bootstrap/cache',
+            $this->rootPath . '/storage/framework/cache/data',
+            $this->rootPath . '/storage/framework/sessions',
+            $this->rootPath . '/storage/framework/views',
+            $this->rootPath . '/storage/logs',
+            $this->rootPath . '/database'
+        ];
+        foreach ($requiredDirs as $dir) {
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0775, true);
+            }
+        }
+    }
+
+    private function setupEnvironment(): void
+    {
+        $env = $this->rootPath . '/.env';
+        $envExample = $this->rootPath . '/.env.example';
+
+        if (!file_exists($env) && file_exists($envExample)) {
+            @copy($envExample, $env);
+            $this->log("🔑 Initialized .env from .env.example");
+        }
+
+        $sqlite = $this->rootPath . '/database/database.sqlite';
+        if (!file_exists($sqlite)) {
+            @touch($sqlite);
+            $this->log("🗄️ Initialized database/database.sqlite");
+        }
+    }
+
+    private function clearOutdatedCaches(): void
+    {
+        $cacheFiles = [
+            '/bootstrap/cache/config.php',
+            '/bootstrap/cache/routes-v7.php',
+            '/bootstrap/cache/routes.php',
+            '/bootstrap/cache/packages.php',
+            '/bootstrap/cache/services.php',
+            '/bootstrap/cache/compiled.php'
+        ];
+        foreach ($cacheFiles as $file) {
+            $fullPath = $this->rootPath . $file;
+            if (file_exists($fullPath)) {
+                @unlink($fullPath);
+            }
+        }
+    }
+
+    private function ensureRootHtaccess(): void
+    {
+        $htaccess = $this->rootPath . '/.htaccess';
+        if (!file_exists($htaccess)) {
+            $content = "<IfModule mod_rewrite.c>\n" .
                        "    RewriteEngine On\n" .
                        "    RewriteRule ^$ public/ [L]\n" .
                        "    RewriteRule (.*) public/$1 [L]\n" .
                        "</IfModule>\n";
-    @file_put_contents($rootHtaccess, $htaccessContent);
-}
+            @file_put_contents($htaccess, $content);
+        }
+    }
 
-// 8. Execute Artisan Console Commands
-try {
-    if (file_exists($rootPath . '/vendor/autoload.php') && file_exists($rootPath . '/bootstrap/app.php')) {
-        require $rootPath . '/vendor/autoload.php';
-        $app = require_once $rootPath . '/bootstrap/app.php';
-        $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+    private function executeArtisanCommands(): void
+    {
+        $autoload = $this->rootPath . '/vendor/autoload.php';
+        $appFile = $this->rootPath . '/bootstrap/app.php';
 
-        // APP_KEY Generation if missing
-        if (file_exists($envFile)) {
-            $envContent = file_get_contents($envFile);
-            if (preg_match('/APP_KEY=\s*$/m', $envContent) || preg_match('/APP_KEY=""/m', $envContent) || strpos($envContent, 'APP_KEY=') === false) {
-                try {
-                    $kernel->call('key:generate', ['--force' => true]);
-                    log_msg("🔑 Generated application key (APP_KEY)");
-                } catch (\Exception $eKey) {
-                    $randomKey = 'base64:' . base64_encode(random_bytes(32));
-                    if (strpos($envContent, 'APP_KEY=') !== false) {
-                        $envContent = preg_replace('/APP_KEY=.*/', 'APP_KEY=' . $randomKey, $envContent);
-                    } else {
-                        $envContent .= "\nAPP_KEY=" . $randomKey . "\n";
-                    }
-                    @file_put_contents($envFile, $envContent);
-                    log_msg("🔑 Generated application key (APP_KEY)");
-                }
-            }
+        if (!file_exists($autoload) || !file_exists($appFile)) {
+            return;
         }
 
-        if (RUN_MIGRATIONS) {
+        try {
+            require $autoload;
+            $app = require_once $appFile;
+            $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+
+            $this->ensureAppKey($kernel);
+
+            if (RUN_MIGRATIONS) {
+                $status = $kernel->call('migrate', ['--force' => true]);
+                $this->log("🗄️ Migrations : " . ($status === 0 ? "SUCCESS" : "NOTICE ({$status})"));
+            }
+
+            if (OPTIMIZE) {
+                $status = $kernel->call('optimize');
+                $this->log("⚡ Optimize   : " . ($status === 0 ? "SUCCESS" : "NOTICE ({$status})"));
+            }
+
+            $this->ensureStorageLink($kernel);
+        } catch (\Throwable $e) {
+            $this->logError("ARTISAN_ERROR: " . $e->getMessage());
+        }
+    }
+
+    private function ensureAppKey($kernel): void
+    {
+        $env = $this->rootPath . '/.env';
+        if (!file_exists($env)) {
+            return;
+        }
+
+        $content = file_get_contents($env);
+        if (preg_match('/APP_KEY=\s*$/m', $content) || preg_match('/APP_KEY=""/m', $content) || strpos($content, 'APP_KEY=') === false) {
             try {
-                $statusMigrate = $kernel->call('migrate', ['--force' => true]);
-                log_msg("🗄️ Migrations : " . ($statusMigrate === 0 ? "SUCCESS" : "NOTICE (" . $statusMigrate . ")"));
-            } catch (\Exception $eDb) {
-                log_msg("🗄️ Migrations : NOTICE (" . $eDb->getMessage() . ")");
+                $kernel->call('key:generate', ['--force' => true]);
+                $this->log("🔑 Generated application key (APP_KEY)");
+            } catch (\Throwable $e) {
+                $key = 'base64:' . base64_encode(random_bytes(32));
+                $content = strpos($content, 'APP_KEY=') !== false
+                    ? preg_replace('/APP_KEY=.*/', 'APP_KEY=' . $key, $content)
+                    : $content . "\nAPP_KEY=" . $key . "\n";
+                @file_put_contents($env, $content);
+                $this->log("🔑 Generated application key (APP_KEY)");
             }
         }
+    }
 
-        if (OPTIMIZE) {
-            try {
-                $statusOptimize = $kernel->call('optimize');
-                log_msg("⚡ Optimize   : " . ($statusOptimize === 0 ? "SUCCESS" : "NOTICE (" . $statusOptimize . ")"));
-            } catch (\Exception $eOpt) {
-                log_msg("⚡ Optimize   : NOTICE (" . $eOpt->getMessage() . ")");
-            }
-        }
-
-        // Storage Symlink Link
-        if (!file_exists($rootPath . '/public/storage')) {
+    private function ensureStorageLink($kernel): void
+    {
+        $link = $this->rootPath . '/public/storage';
+        if (!file_exists($link)) {
             if (function_exists('symlink')) {
-                @symlink('../storage/app/public', $rootPath . '/public/storage');
+                @symlink('../storage/app/public', $link);
             } else {
                 @$kernel->call('storage:link');
             }
-            log_msg("🔗 Storage Symlink : LINKED");
+            $this->log("🔗 Storage Symlink : LINKED");
         }
     }
-} catch (\Exception $e) {
-    log_error("ARTISAN_ERROR: " . $e->getMessage());
+
+    private function printBanner(): void
+    {
+        echo <<<TEXT
+╔══════════════════════════════════════════════════════════════╗
+║              Laravel Deploy Shared Hosting                   ║
+║          Powered by Chann Labs Creative Studio               ║
+╚══════════════════════════════════════════════════════════════╝
+
+TEXT;
+    }
+
+    private function log(string $message): void
+    {
+        echo "[" . date('H:i:s') . "] " . $message . "\n";
+        if (ob_get_level() > 0) { @ob_flush(); }
+        @flush();
+    }
+
+    private function logError(string $message): void
+    {
+        echo "[" . date('H:i:s') . "] [ERROR] " . $message . "\n";
+        if (ob_get_level() > 0) { @ob_flush(); }
+        @flush();
+    }
 }
 
-log_msg("✔ DEPLOYMENT SUCCESSFUL: Application is live.");
+// Instantiate and execute remote deployment engine
+(new RemoteDeployer())->run();
 ?>
