@@ -97,13 +97,14 @@ if ($zip->open($zipFile) === TRUE) {
     exit(1);
 }
 
-// 4. Ensure storage and bootstrap directories exist
+// 4. Ensure storage, database and bootstrap directories exist
 $requiredDirs = [
     $rootPath . '/bootstrap/cache',
     $rootPath . '/storage/framework/cache/data',
     $rootPath . '/storage/framework/sessions',
     $rootPath . '/storage/framework/views',
-    $rootPath . '/storage/logs'
+    $rootPath . '/storage/logs',
+    $rootPath . '/database'
 ];
 foreach ($requiredDirs as $dir) {
     if (!is_dir($dir)) {
@@ -111,7 +112,25 @@ foreach ($requiredDirs as $dir) {
     }
 }
 
-// 5. Clear outdated bootstrap cache files
+// 5. Environment & Database Pre-checks (.env & SQLite)
+$envFile = $rootPath . '/.env';
+$envExampleFile = $rootPath . '/.env.example';
+if (!file_exists($envFile)) {
+    if (file_exists($envExampleFile)) {
+        log_msg("Creating remote .env file from .env.example...");
+        @copy($envExampleFile, $envFile);
+    } else {
+        log_msg("Notice: Neither .env nor .env.example found on remote server.");
+    }
+}
+
+$sqliteFile = $rootPath . '/database/database.sqlite';
+if (!file_exists($sqliteFile)) {
+    log_msg("Creating database/database.sqlite file...");
+    @touch($sqliteFile);
+}
+
+// 6. Clear outdated bootstrap cache files
 $cacheFiles = [
     $rootPath . '/bootstrap/cache/config.php',
     $rootPath . '/bootstrap/cache/routes-v7.php',
@@ -126,7 +145,7 @@ foreach ($cacheFiles as $file) {
     }
 }
 
-// 6. Ensure root .htaccess for shared hosting URL rewrite fallback
+// 7. Ensure root .htaccess for shared hosting URL rewrite fallback
 $rootHtaccess = $rootPath . '/.htaccess';
 if (!file_exists($rootHtaccess)) {
     log_msg("Creating root .htaccess rewrite fallback...");
@@ -138,13 +157,32 @@ if (!file_exists($rootHtaccess)) {
     @file_put_contents($rootHtaccess, $htaccessContent);
 }
 
-// 7. Execute Artisan Operations
+// 8. Execute Artisan Operations
 try {
     if (file_exists($rootPath . '/vendor/autoload.php') && file_exists($rootPath . '/bootstrap/app.php')) {
         log_msg("Booting Laravel environment...");
         require $rootPath . '/vendor/autoload.php';
         $app = require_once $rootPath . '/bootstrap/app.php';
         $kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+
+        // Ensure APP_KEY is populated in .env if empty
+        if (file_exists($envFile)) {
+            $envContent = file_get_contents($envFile);
+            if (preg_match('/APP_KEY=\s*$/m', $envContent) || preg_match('/APP_KEY=""/m', $envContent) || strpos($envContent, 'APP_KEY=') === false) {
+                log_msg("Generating application key...");
+                try {
+                    $kernel->call('key:generate', ['--force' => true]);
+                } catch (\Exception $eKey) {
+                    $randomKey = 'base64:' . base64_encode(random_bytes(32));
+                    if (strpos($envContent, 'APP_KEY=') !== false) {
+                        $envContent = preg_replace('/APP_KEY=.*/', 'APP_KEY=' . $randomKey, $envContent);
+                    } else {
+                        $envContent .= "\nAPP_KEY=" . $randomKey . "\n";
+                    }
+                    @file_put_contents($envFile, $envContent);
+                }
+            }
+        }
 
         if (RUN_MIGRATIONS) {
             log_msg("Running database migrations...");
