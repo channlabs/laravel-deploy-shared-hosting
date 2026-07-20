@@ -36,9 +36,17 @@ if [[ -z "${FTP_SERVER:-}" || -z "${FTP_USERNAME:-}" || -z "${FTP_PASSWORD:-}" ]
     exit 1
 fi
 
+# Sanitize FTP_DIRECTORY
 FTP_DIRECTORY="${FTP_DIRECTORY:-/}"
-if [[ "$FTP_DIRECTORY" != /* ]]; then
-    FTP_DIRECTORY="/$FTP_DIRECTORY"
+FTP_DIRECTORY=$(echo "$FTP_DIRECTORY" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+if [[ "$FTP_DIRECTORY" == "" || "$FTP_DIRECTORY" == "." || "$FTP_DIRECTORY" == "./" || "$FTP_DIRECTORY" == "/" ]]; then
+    FTP_DIRECTORY="/"
+else
+    if [[ "$FTP_DIRECTORY" != /* ]]; then
+        FTP_DIRECTORY="/$FTP_DIRECTORY"
+    fi
+    FTP_DIRECTORY="${FTP_DIRECTORY%/}"
 fi
 
 # Detect application package name
@@ -65,24 +73,34 @@ log "Vendor Package   : ${VENDOR_PACKAGE_NAME}"
 # Step 1: Ensure directory structure and check if vendor zip is cached
 log "Checking if vendor package is already cached on remote FTP server..."
 
-# We create the cache dir if it doesn't exist, and list the vendor package file.
-# We redirect output to capture if it is listed.
-VENDOR_EXISTS=$(lftp -u "${FTP_USERNAME},${FTP_PASSWORD}" "${FTP_SERVER}" <<EOF 2>/dev/null || echo "failed_connection"
-  set ftp:passive-mode true
-  set ssl:verify-certificate false
-  set net:timeout 10
-  set net:max-retries 3
-  mkdir -p "${FTP_DIRECTORY}/_vendor_cache"
-  cd "${FTP_DIRECTORY}/_vendor_cache"
-  nlist "${VENDOR_PACKAGE_NAME}"
-  quit
+CHECK_SCRIPT=$(mktemp)
+cat <<EOF > "$CHECK_SCRIPT"
+set ftp:passive-mode true
+set ssl:verify-certificate false
+set net:timeout 10
+set net:max-retries 3
 EOF
-)
 
-if [[ "$VENDOR_EXISTS" == "failed_connection" ]]; then
-    error "Failed to connect to the FTP server. Please check your credentials and network settings."
-    exit 1
+if [[ "$FTP_DIRECTORY" != "/" ]]; then
+    cat <<EOF >> "$CHECK_SCRIPT"
+mkdir -p "${FTP_DIRECTORY}"
+cd "${FTP_DIRECTORY}"
+EOF
+else
+    cat <<EOF >> "$CHECK_SCRIPT"
+cd "/"
+EOF
 fi
+
+cat <<EOF >> "$CHECK_SCRIPT"
+mkdir -p _vendor_cache
+cd _vendor_cache
+nlist "${VENDOR_PACKAGE_NAME}"
+quit
+EOF
+
+VENDOR_EXISTS=$(lftp -u "${FTP_USERNAME},${FTP_PASSWORD}" "${FTP_SERVER}" -f "$CHECK_SCRIPT" 2>/dev/null || echo "cache_miss")
+rm -f "$CHECK_SCRIPT"
 
 UPLOAD_VENDOR=true
 if echo "$VENDOR_EXISTS" | grep -Fq "${VENDOR_PACKAGE_NAME}"; then
@@ -95,7 +113,6 @@ fi
 # Step 2: Upload Files (app zip, deploy.php, and optionally vendor zip)
 log "Starting upload operations..."
 
-# Create a temporary lftp script
 LFTP_SCRIPT=$(mktemp)
 
 cat <<EOF > "$LFTP_SCRIPT"
@@ -106,10 +123,21 @@ set net:max-retries 5
 set net:reconnect-interval-base 5
 set net:reconnect-interval-multiplier 2
 set cmd:fail-exit true
+EOF
 
-# Ensure root directory and public directory exist
+if [[ "$FTP_DIRECTORY" != "/" ]]; then
+    cat <<EOF >> "$LFTP_SCRIPT"
 mkdir -p "${FTP_DIRECTORY}"
 cd "${FTP_DIRECTORY}"
+EOF
+else
+    cat <<EOF >> "$LFTP_SCRIPT"
+cd "/"
+EOF
+fi
+
+cat <<EOF >> "$LFTP_SCRIPT"
+# Ensure public directory exists
 mkdir -p public
 
 # Upload main app package and deploy.php
@@ -127,9 +155,8 @@ if [[ "$UPLOAD_VENDOR" == "true" ]]; then
     fi
     cat <<EOF >> "$LFTP_SCRIPT"
 echo "Uploading vendor package to cache..."
-mkdir -p "${FTP_DIRECTORY}/_vendor_cache"
-cd "${FTP_DIRECTORY}/_vendor_cache"
-put "${VENDOR_PACKAGE_NAME}" -o "${VENDOR_PACKAGE_NAME}"
+mkdir -p _vendor_cache
+put "${VENDOR_PACKAGE_NAME}" -o "_vendor_cache/${VENDOR_PACKAGE_NAME}"
 EOF
 fi
 
