@@ -1,7 +1,7 @@
 # 🚀 Laravel Shared Hosting Deployer (GitHub Action)
 
 <p align="left">
-  <a href="https://github.com/channlabs/laravel-shared-hosting-deployer"><img src="https://img.shields.io/github/v/release/channlabs/laravel-shared-hosting-deployer?color=7c3aed&style=for-the-badge&logo=github" alt="Release"></a>
+  <a href="https://github.com/channlabs/laravel-deploy-shared-hosting"><img src="https://img.shields.io/github/v/release/channlabs/laravel-deploy-shared-hosting?color=7c3aed&style=for-the-badge&logo=github" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-3b82f6.svg?style=for-the-badge" alt="License"></a>
   <a href="https://laravel.com"><img src="https://img.shields.io/badge/Laravel-10%20%7C%2011%20%7C%2012%20%7C%2013-ff2d20.svg?style=for-the-badge&logo=laravel" alt="Laravel"></a>
 </p>
@@ -53,14 +53,16 @@ This Action solves that bottleneck using the **ZIP-Express Engine**:
 ## 🚀 Quick Start
 
 ### 1. Add Repository Secrets
+
 Navigate to your GitHub Repository > **Settings** > **Secrets and variables** > **Actions** > **New repository secret**, and add:
 
-* `FTP_SERVER` / `FTP_SERVER_STAGING` : FTP Hostname or IP address (e.g., `ftp.domain.com`).
-* `FTP_USERNAME` / `FTP_USERNAME_STAGING` : FTP Username.
-* `FTP_PASSWORD` / `FTP_PASSWORD_STAGING` : FTP Password.
-* `DEPLOY_TOKEN` : Secure random token for authenticating deployment requests.
+- `FTP_SERVER` / `FTP_SERVER_STAGING` : FTP Hostname or IP address (e.g., `ftp.domain.com`).
+- `FTP_USERNAME` / `FTP_USERNAME_STAGING` : FTP Username.
+- `FTP_PASSWORD` / `FTP_PASSWORD_STAGING` : FTP Password.
+- `DEPLOY_TOKEN` : Secure random token for authenticating deployment requests.
 
 ### 2. Create Workflow File
+
 Create a workflow file in your Laravel project at `.github/workflows/deploy.yml`:
 
 ```yaml
@@ -69,8 +71,8 @@ name: 🚀 Deploy Application to Shared Hosting
 on:
   push:
     branches:
-      - main     # Triggers production deployment on push to main
-      - staging  # Triggers staging deployment on push to staging
+      - main # Triggers production deployment on push to main
+      - staging # Triggers staging deployment on push to staging
 
 jobs:
   web-deploy:
@@ -89,32 +91,32 @@ jobs:
           ftp-password: ${{ github.ref_name == 'main' && secrets.FTP_PASSWORD || secrets.FTP_PASSWORD_STAGING }}
           deploy-url: ${{ github.ref_name == 'main' && 'domain.com' || 'staging.domain.com' }}
           deploy-token: ${{ secrets.DEPLOY_TOKEN }}
-          php-version: '8.4'    # Optional, default '8.4'
-          node-version: '24'   # Optional, default '24'
-          pnpm-version: '10'   # Optional, default '10'
-          run-migrations: 'true'
-          optimize: 'true'
-          health-check: 'true'
+          php-version: "8.4" # Optional, default '8.4'
+          node-version: "24" # Optional, default '24'
+          pnpm-version: "10" # Optional, default '10'
+          run-migrations: "true"
+          optimize: "true"
+          health-check: "true"
 ```
 
 ---
 
 ## ⚙️ Configuration Inputs
 
-| Input | Description | Required | Default |
-| :--- | :--- | :---: | :---: |
-| `ftp-server` | FTP Server Hostname or IP | **Yes** | - |
-| `ftp-username` | FTP Account Username | **Yes** | - |
-| `ftp-password` | FTP Account Password | **Yes** | - |
-| `deploy-url` | Public Deployment URL (Domain / Subdomain) | **Yes** | - |
-| `deploy-token` | Secure Deployment Token | **Yes** | - |
-| `ftp-directory` | Remote Deployment FTP Path | No | `/` |
-| `php-version` | PHP Version for build process | No | `8.4` |
-| `node-version` | Node.js Version for asset compilation | No | `24` |
-| `pnpm-version` | PNPM Package Manager version | No | `10` |
-| `run-migrations` | Execute database migrations (`migrate --force`) | No | `true` |
-| `optimize` | Execute Laravel optimizations (`artisan optimize`) | No | `true` |
-| `health-check` | Perform post-deployment HTTP health check | No | `true` |
+| Input            | Description                                        | Required | Default |
+| :--------------- | :------------------------------------------------- | :------: | :-----: |
+| `ftp-server`     | FTP Server Hostname or IP                          | **Yes**  |    -    |
+| `ftp-username`   | FTP Account Username                               | **Yes**  |    -    |
+| `ftp-password`   | FTP Account Password                               | **Yes**  |    -    |
+| `deploy-url`     | Public Deployment URL (Domain / Subdomain)         | **Yes**  |    -    |
+| `deploy-token`   | Secure Deployment Token                            | **Yes**  |    -    |
+| `ftp-directory`  | Remote Deployment FTP Path                         |    No    |   `/`   |
+| `php-version`    | PHP Version for build process                      |    No    |  `8.4`  |
+| `node-version`   | Node.js Version for asset compilation              |    No    |  `24`   |
+| `pnpm-version`   | PNPM Package Manager version                       |    No    |  `10`   |
+| `run-migrations` | Execute database migrations (`migrate --force`)    |    No    | `true`  |
+| `optimize`       | Execute Laravel optimizations (`artisan optimize`) |    No    | `true`  |
+| `health-check`   | Perform post-deployment HTTP health check          |    No    | `true`  |
 
 ---
 
@@ -123,9 +125,9 @@ jobs:
 > [!NOTE]
 > **Self-Cleaning Engine:** The application `.zip` archive and remote PHP extraction scripts (`deploy.php` / `unzip.php`) are automatically deleted from the server upon execution.
 
-* **Token Guard:** Remote execution is secured with a SHA256 / UUID token to block unauthorized access.
-* **Smart Rewrite Fallback:** Automatically generates a root `.htaccess` fallback if the hosting Document Root points to the project root directory rather than `public/`.
-* **Zero Residual Trace:** No temporary ZIP archives or execution scripts remain on the host server after deployment completes.
+- **Token Guard:** Remote execution is secured with a SHA256 / UUID token to block unauthorized access.
+- **Smart Rewrite Fallback:** Automatically generates a root `.htaccess` fallback if the hosting Document Root points to the project root directory rather than `public/`.
+- **Zero Residual Trace:** No temporary ZIP archives or execution scripts remain on the host server after deployment completes.
 
 ---
 
