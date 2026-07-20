@@ -1,12 +1,6 @@
 name: "Laravel Shared Hosting Deploy"
 
-description: >
-  Production-ready GitHub Action for deploying Laravel applications
-  to traditional shared hosting environments via FTP.
-  Automatically builds frontend assets, packages the application,
-  uploads deployment archives, executes secure remote deployment,
-  performs migrations, optimizes Laravel caches and verifies
-  application health after deployment.
+description: "Deploy Laravel apps to shared hosting via FTP. Automates asset building, ZIP packaging, migrations & health checks."
 
 author: Chann Labs Creative Studio
 
