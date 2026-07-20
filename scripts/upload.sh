@@ -99,7 +99,7 @@ nlist "${VENDOR_PACKAGE_NAME}"
 quit
 EOF
 
-VENDOR_EXISTS=$(lftp -u "${FTP_USERNAME},${FTP_PASSWORD}" "${FTP_SERVER}" -f "$CHECK_SCRIPT" 2>/dev/null || echo "cache_miss")
+VENDOR_EXISTS=$(lftp -u "${FTP_USERNAME},${FTP_PASSWORD}" -f "$CHECK_SCRIPT" "${FTP_SERVER}" 2>/dev/null || echo "cache_miss")
 rm -f "$CHECK_SCRIPT"
 
 UPLOAD_VENDOR=true
@@ -163,7 +163,7 @@ fi
 echo "quit" >> "$LFTP_SCRIPT"
 
 # Execute LFTP upload
-if lftp -u "${FTP_USERNAME},${FTP_PASSWORD}" "${FTP_SERVER}" -f "$LFTP_SCRIPT"; then
+if lftp -u "${FTP_USERNAME},${FTP_PASSWORD}" -f "$LFTP_SCRIPT" "${FTP_SERVER}"; then
     success "All files uploaded successfully!"
     rm -f "$LFTP_SCRIPT"
 else
