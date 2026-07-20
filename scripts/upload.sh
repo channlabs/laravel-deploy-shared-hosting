@@ -142,10 +142,11 @@ cat <<EOF >> "$LFTP_SCRIPT"
 # Ensure public directory exists
 mkdir -f -p public
 
-# Upload main app package and deploy.php
+# Upload main app package and deploy.php (to both root and public/ for maximum compatibility)
 echo "Uploading application package..."
 put "${APP_PACKAGE}" -o "${APP_PACKAGE}"
 echo "Uploading deployment execution script..."
+put "deploy.php" -o "deploy.php"
 put "deploy.php" -o "public/deploy.php"
 EOF
 
