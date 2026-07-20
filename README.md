@@ -3,7 +3,7 @@
 <p align="left">
   <a href="https://github.com/channlabs/laravel-deploy-shared-hosting"><img src="https://img.shields.io/github/v/release/channlabs/laravel-deploy-shared-hosting?color=7c3aed&style=for-the-badge&logo=github" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-3b82f6.svg?style=for-the-badge" alt="License"></a>
-  <a href="https://laravel.com"><img src="https://img.shields.io/badge/Laravel-10%20%7C%2011%20%7C%2012%20%7C%2013-ff2d20.svg?style=for-the-badge&logo=laravel" alt="Laravel"></a>
+  <a href="https://laravel.com"><img src="https://img.shields.io/badge/Laravel-12%20%7C%2013-ff2d20.svg?style=for-the-badge&logo=laravel" alt="Laravel"></a>
 </p>
 
 A production-grade **Composite GitHub Action** engineered by **Chann Labs Creative Studio** for seamlessly deploying Laravel applications to traditional **Shared Hosting (cPanel / Hostinger / DirectAdmin)** environments via passive FTP.
