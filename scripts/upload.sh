@@ -75,6 +75,7 @@ log "Checking if vendor package is already cached on remote FTP server..."
 
 CHECK_SCRIPT=$(mktemp)
 cat <<EOF > "$CHECK_SCRIPT"
+open -u "${FTP_USERNAME},${FTP_PASSWORD}" "${FTP_SERVER}"
 set ftp:passive-mode true
 set ssl:verify-certificate false
 set net:timeout 10
@@ -99,7 +100,7 @@ nlist "${VENDOR_PACKAGE_NAME}"
 quit
 EOF
 
-VENDOR_EXISTS=$(lftp -u "${FTP_USERNAME},${FTP_PASSWORD}" -f "$CHECK_SCRIPT" "${FTP_SERVER}" 2>/dev/null || echo "cache_miss")
+VENDOR_EXISTS=$(lftp -f "$CHECK_SCRIPT" 2>/dev/null || echo "cache_miss")
 rm -f "$CHECK_SCRIPT"
 
 UPLOAD_VENDOR=true
@@ -116,6 +117,7 @@ log "Starting upload operations..."
 LFTP_SCRIPT=$(mktemp)
 
 cat <<EOF > "$LFTP_SCRIPT"
+open -u "${FTP_USERNAME},${FTP_PASSWORD}" "${FTP_SERVER}"
 set ftp:passive-mode true
 set ssl:verify-certificate false
 set net:timeout 10
@@ -163,7 +165,7 @@ fi
 echo "quit" >> "$LFTP_SCRIPT"
 
 # Execute LFTP upload
-if lftp -u "${FTP_USERNAME},${FTP_PASSWORD}" -f "$LFTP_SCRIPT" "${FTP_SERVER}"; then
+if lftp -f "$LFTP_SCRIPT"; then
     success "All files uploaded successfully!"
     rm -f "$LFTP_SCRIPT"
 else
