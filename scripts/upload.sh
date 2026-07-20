@@ -4,18 +4,21 @@
 #
 # Laravel Shared Hosting Deploy
 #
-# Remote FTP Uploader via LFTP (ZIP-Express)
+# Remote FTP Uploader via LFTP (ZIP-Express Engine)
+# Author: Chann Labs Creative Studio
 #
 ##############################################################################
 
 set -Eeuo pipefail
 
-# Colors
+# Terminal Colors
 RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 CYAN="\033[36m"
 BLUE="\033[34m"
+BOLD="\033[1m"
+GRAY="\033[90m"
 RESET="\033[0m"
 
 log() {
@@ -30,13 +33,17 @@ success() {
     printf "${GREEN}✔${RESET} %b\n" "$1"
 }
 
+divider() {
+    printf "${GRAY}──────────────────────────────────────────────────────────${RESET}\n"
+}
+
 # Validation
 if [[ -z "${FTP_SERVER:-}" || -z "${FTP_USERNAME:-}" || -z "${FTP_PASSWORD:-}" ]]; then
     error "Missing required FTP credentials (FTP_SERVER, FTP_USERNAME, FTP_PASSWORD)."
     exit 1
 fi
 
-# Sanitize FTP_DIRECTORY
+# Sanitize FTP_DIRECTORY Parameter
 FTP_DIRECTORY="${FTP_DIRECTORY:-/}"
 FTP_DIRECTORY=$(echo "$FTP_DIRECTORY" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
 
@@ -49,24 +56,27 @@ else
     FTP_DIRECTORY="${FTP_DIRECTORY%/}"
 fi
 
-# Locate zip package
+# Detect Application ZIP Package
 APP_PACKAGE="deploy.zip"
 if [[ ! -f "$APP_PACKAGE" ]]; then
     APP_PACKAGE=$(ls deploy-*.zip 2>/dev/null | head -n 1 || true)
 fi
 
 if [[ -z "$APP_PACKAGE" || ! -f "$APP_PACKAGE" ]]; then
-    error "Main application zip package (deploy.zip) not found."
+    error "Main application ZIP package (deploy.zip) not found."
     exit 1
 fi
 
-log "FTP Server       : ${FTP_SERVER}"
-log "FTP Directory    : ${FTP_DIRECTORY}"
-log "App Package      : ${APP_PACKAGE}"
+divider
+log "${BOLD}Transfer Metadata Summary${RESET}"
+log "FTP Hostname  : ${CYAN}${FTP_SERVER}${RESET}"
+log "Target Path   : ${CYAN}${FTP_DIRECTORY}${RESET}"
+log "Package File  : ${CYAN}${APP_PACKAGE}${RESET}"
+divider
 
-log "Uploading ZIP package and remote extractor script via LFTP..."
+log "🚀 Uploading ZIP package and remote execution script via LFTP..."
 
-# Execute LFTP upload command
+# Execute LFTP Upload Command
 if [[ "$FTP_DIRECTORY" != "/" ]]; then
     lftp -c "
       set ftp:passive-mode true;
@@ -102,4 +112,6 @@ else
     "
 fi
 
-success "All files uploaded successfully via LFTP!"
+divider
+success "All deployment archives uploaded successfully via LFTP!"
+divider
