@@ -412,6 +412,18 @@ try {
             $kernel->call('storage:link');
         }
     }
+
+    // Ensure root .htaccess exists for shared hosting if Document Root points to root directory
+    $rootHtaccess = $rootPath . '/.htaccess';
+    if (!file_exists($rootHtaccess)) {
+        log_msg("Creating root .htaccess for shared hosting URL rewrite...");
+        $htaccessContent = "<IfModule mod_rewrite.c>\n" .
+                           "    RewriteEngine On\n" .
+                           "    RewriteRule ^$ public/ [L]\n" .
+                           "    RewriteRule (.*) public/$1 [L]\n" .
+                           "</IfModule>\n";
+        file_put_contents($rootHtaccess, $htaccessContent);
+    }
 } catch (Exception $e) {
     log_error("Laravel execution failed: " . $e->getMessage());
     rollback($backupDir, $rootPath, $movedItems, $vendorUpdated);

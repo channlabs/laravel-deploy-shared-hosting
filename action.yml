@@ -222,7 +222,10 @@ runs:
       run: |
 
         echo "Executing remote deployment..."
-        RESPONSE=$(curl -sS -L --retry 5 --retry-delay 5 -w "\nHTTP_STATUS:%{http_code}" "https://${{ inputs.deploy-url }}/deploy.php?token=${{ inputs.deploy-token }}")
+        CLEAN_URL="${{ inputs.deploy-url }}"
+        CLEAN_URL=$(echo "$CLEAN_URL" | sed -e 's|^https://||' -e 's|^http://||' -e 's|/*$||')
+        USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        RESPONSE=$(curl -sS -L -A "$USER_AGENT" --retry 5 --retry-delay 5 -w "\nHTTP_STATUS:%{http_code}" "https://${CLEAN_URL}/deploy.php?token=${{ inputs.deploy-token }}")
         
         # Output the response body except the status code line
         echo "$RESPONSE" | grep -v "HTTP_STATUS:"
