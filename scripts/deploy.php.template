@@ -40,12 +40,16 @@ if (defined('DEPLOY_TOKEN') && DEPLOY_TOKEN !== '' && DEPLOY_TOKEN !== '__DEPLOY
     }
 }
 
-echo "╔════════════════════════════════════════════════════════════════╗\n";
-echo "║             Laravel Shared Hosting Deployer v1                  ║\n";
-echo "║             Powered by Chann Labs Creative Studio              ║\n";
-echo "╚════════════════════════════════════════════════════════════════╝\n\n";
+$banner = <<<TEXT
+╔══════════════════════════════════════════════════════════════╗
+║              Laravel Deploy Shared Hosting                   ║
+║          Powered by Chann Labs Creative Studio               ║
+╚══════════════════════════════════════════════════════════════╝
+TEXT;
 
-log_msg("🚀 Starting Remote Deployment Engine...");
+echo $banner . PHP_EOL . PHP_EOL;
+
+log_msg("🚀 Starting Remote Deployment...");
 
 // Determine root directory where ZIP package is located
 $rootPath = __DIR__;
@@ -90,13 +94,12 @@ if (!file_exists($zipFile)) {
 }
 
 // 3. Extract ZIP Archive
-log_msg("📦 [1/7] Extracting application ZIP package...");
 $zip = new ZipArchive;
 if ($zip->open($zipFile) === TRUE) {
     $zip->extractTo($rootPath);
     $zip->close();
     @unlink($zipFile);
-    log_msg("   └── ✔ ZIP extraction completed successfully.");
+    log_msg("📦 Extracted application ZIP package.");
 } else {
     http_response_code(500);
     log_error("FAILED_OPEN_ZIP: Failed to open or extract ZIP archive.");
@@ -104,7 +107,6 @@ if ($zip->open($zipFile) === TRUE) {
 }
 
 // 4. Ensure Storage & Bootstrap Cache Directories Exist
-log_msg("📂 [2/7] Preparing storage and cache directory structure...");
 $requiredDirs = [
     $rootPath . '/bootstrap/cache',
     $rootPath . '/storage/framework/cache/data',
@@ -120,26 +122,20 @@ foreach ($requiredDirs as $dir) {
 }
 
 // 5. Environment & Database Setup (.env & SQLite)
-log_msg("🔑 [3/7] Verifying environment & database configuration...");
 $envFile = $rootPath . '/.env';
 $envExampleFile = $rootPath . '/.env.example';
-if (!file_exists($envFile)) {
-    if (file_exists($envExampleFile)) {
-        log_msg("   ├── Copying .env.example to .env...");
-        @copy($envExampleFile, $envFile);
-    } else {
-        log_msg("   ├── Notice: Neither .env nor .env.example found.");
-    }
+if (!file_exists($envFile) && file_exists($envExampleFile)) {
+    @copy($envExampleFile, $envFile);
+    log_msg("🔑 Initialized .env from .env.example");
 }
 
 $sqliteFile = $rootPath . '/database/database.sqlite';
 if (!file_exists($sqliteFile)) {
-    log_msg("   └── Initializing SQLite database (database/database.sqlite)...");
     @touch($sqliteFile);
+    log_msg("🗄️ Initialized database/database.sqlite");
 }
 
 // 6. Clear Outdated Bootstrap Cache Files
-log_msg("🧹 [4/7] Clearing stale bootstrap cache configurations...");
 $cacheFiles = [
     $rootPath . '/bootstrap/cache/config.php',
     $rootPath . '/bootstrap/cache/routes-v7.php',
@@ -155,10 +151,8 @@ foreach ($cacheFiles as $file) {
 }
 
 // 7. Mod_Rewrite Fallback (.htaccess for Shared Hosting Root Document Root)
-log_msg("⚙️ [5/7] Checking root .htaccess URL rewrite rules...");
 $rootHtaccess = $rootPath . '/.htaccess';
 if (!file_exists($rootHtaccess)) {
-    log_msg("   └── Creating root .htaccess rewrite fallback to public/...");
     $htaccessContent = "<IfModule mod_rewrite.c>\n" .
                        "    RewriteEngine On\n" .
                        "    RewriteRule ^$ public/ [L]\n" .
@@ -168,7 +162,6 @@ if (!file_exists($rootHtaccess)) {
 }
 
 // 8. Execute Artisan Console Commands
-log_msg("⚡ [6/7] Booting Laravel ecosystem and executing Artisan triggers...");
 try {
     if (file_exists($rootPath . '/vendor/autoload.php') && file_exists($rootPath . '/bootstrap/app.php')) {
         require $rootPath . '/vendor/autoload.php';
@@ -179,9 +172,9 @@ try {
         if (file_exists($envFile)) {
             $envContent = file_get_contents($envFile);
             if (preg_match('/APP_KEY=\s*$/m', $envContent) || preg_match('/APP_KEY=""/m', $envContent) || strpos($envContent, 'APP_KEY=') === false) {
-                log_msg("   ├── Generating application encryption key (APP_KEY)...");
                 try {
                     $kernel->call('key:generate', ['--force' => true]);
+                    log_msg("🔑 Generated application key (APP_KEY)");
                 } catch (\Exception $eKey) {
                     $randomKey = 'base64:' . base64_encode(random_bytes(32));
                     if (strpos($envContent, 'APP_KEY=') !== false) {
@@ -190,6 +183,7 @@ try {
                         $envContent .= "\nAPP_KEY=" . $randomKey . "\n";
                     }
                     @file_put_contents($envFile, $envContent);
+                    log_msg("🔑 Generated application key (APP_KEY)");
                 }
             }
         }
@@ -197,18 +191,18 @@ try {
         if (RUN_MIGRATIONS) {
             try {
                 $statusMigrate = $kernel->call('migrate', ['--force' => true]);
-                log_msg("   ├── Database Migrations : " . ($statusMigrate === 0 ? "✔ SUCCESS" : "✖ FAILED (Exit: " . $statusMigrate . ")"));
+                log_msg("🗄️ Migrations : " . ($statusMigrate === 0 ? "SUCCESS" : "NOTICE (" . $statusMigrate . ")"));
             } catch (\Exception $eDb) {
-                log_msg("   ├── Database Migrations : NOTICE (" . $eDb->getMessage() . ")");
+                log_msg("🗄️ Migrations : NOTICE (" . $eDb->getMessage() . ")");
             }
         }
 
         if (OPTIMIZE) {
             try {
                 $statusOptimize = $kernel->call('optimize');
-                log_msg("   ├── System Optimization  : " . ($statusOptimize === 0 ? "✔ SUCCESS" : "✖ FAILED (Exit: " . $statusOptimize . ")"));
+                log_msg("⚡ Optimize   : " . ($statusOptimize === 0 ? "SUCCESS" : "NOTICE (" . $statusOptimize . ")"));
             } catch (\Exception $eOpt) {
-                log_msg("   ├── System Optimization  : NOTICE (" . $eOpt->getMessage() . ")");
+                log_msg("⚡ Optimize   : NOTICE (" . $eOpt->getMessage() . ")");
             }
         }
 
@@ -216,18 +210,15 @@ try {
         if (!file_exists($rootPath . '/public/storage')) {
             if (function_exists('symlink')) {
                 @symlink('../storage/app/public', $rootPath . '/public/storage');
-                log_msg("   └── Storage Link         : ✔ LINKED");
             } else {
                 @$kernel->call('storage:link');
-                log_msg("   └── Storage Link         : ✔ LINKED VIA ARTISAN");
             }
+            log_msg("🔗 Storage Symlink : LINKED");
         }
     }
 } catch (\Exception $e) {
     log_error("ARTISAN_ERROR: " . $e->getMessage());
 }
 
-echo "\n==================================================================\n";
-log_msg("✔ DEPLOYMENT SUCCESSFUL: Application is live and serving traffic.");
-echo "==================================================================\n\n";
+log_msg("✔ DEPLOYMENT SUCCESSFUL: Application is live.");
 ?>

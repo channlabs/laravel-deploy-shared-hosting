@@ -27,14 +27,14 @@ This Action solves that bottleneck using the **ZIP-Express Engine**:
 
 ```
 ┌──────────────────────────┐      ┌──────────────────────────┐      ┌──────────────────────────┐
-│   GitHub Infrastructure  │      │     LFTP Transfer        │      │    Remote Host Server    │
+│   GitHub Infrastructure  │      │      LFTP Transfer       │      │    Remote Host Server    │
 ├──────────────────────────┤      ├──────────────────────────┤      ├──────────────────────────┤
 │ 1. composer install      │ ───► │ Uploads deploy.zip       │ ───► │ Executes deploy.php      │
 │ 2. pnpm build (Vite)     │      │ Uploads deploy.php       │      │  ├── Unzips deploy.zip   │
 │ 3. Package deploy.zip    │      │ Uploads unzip.php        │      │  ├── Auto-creates .env   │
 └──────────────────────────┘      └──────────────────────────┘      │  ├── Runs migrations     │
                                                                     │  ├── Runs optimize       │
-                                                                    │  └── Self-cleans ZIP & PHP│
+                                                                    │  └── Self-cleans files   │
                                                                     └──────────────────────────┘
 ```
 

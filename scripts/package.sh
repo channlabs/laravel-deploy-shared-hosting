@@ -81,13 +81,10 @@ banner() {
 echo
 
 echo -e "${BOLD}${WHITE}"
-echo "╔══════════════════════════════════════════════════════╗"
-echo "║                                                      ║"
-echo "║        Laravel Shared Hosting Deploy v1             ║"
-echo "║                                                      ║"
-echo "║      Production Deployment Package Builder          ║"
-echo "║                                                      ║"
-echo "╚══════════════════════════════════════════════════════╝"
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║              Laravel Deploy Shared Hosting                   ║"
+echo "║          Production Deployment Package Builder               ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
 echo -e "${RESET}"
 
 echo
