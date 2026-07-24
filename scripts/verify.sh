@@ -4,21 +4,28 @@
 #
 # Laravel Shared Hosting Deploy
 #
-# Deployment Health Checker / Verifier
+# Deployment Health Checker & System Verifier Engine
+# Author: Chann Labs Creative Studio
 #
 ##############################################################################
 
 set -Eeuo pipefail
 
-# Colors
+# Terminal Colors
 RED="\033[31m"
 GREEN="\033[32m"
 YELLOW="\033[33m"
 CYAN="\033[36m"
+GRAY="\033[90m"
+BOLD="\033[1m"
 RESET="\033[0m"
 
 log() {
     printf "${CYAN}[Health]${RESET} %b\n" "$1"
+}
+
+warning() {
+    printf "${YELLOW}⚠ [Health Warning]${RESET} %b\n" "$1"
 }
 
 error() {
@@ -27,6 +34,10 @@ error() {
 
 success() {
     printf "${GREEN}✔${RESET} %b\n" "$1"
+}
+
+divider() {
+    printf "${GRAY}──────────────────────────────────────────────────────────${RESET}\n"
 }
 
 if [[ $# -lt 1 ]]; then
@@ -38,44 +49,48 @@ TARGET_URL="$1"
 MAX_ATTEMPTS=5
 DELAY_SECONDS=5
 
-log "Starting health check verification for ${TARGET_URL}..."
+divider
+log "${BOLD}Starting System Health Check Verification${RESET}"
+log "Target Endpoint : ${CYAN}${TARGET_URL}${RESET}"
+divider
 
 ATTEMPT=1
 SUCCESS=false
 
+USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
 while [[ $ATTEMPT -le $MAX_ATTEMPTS ]]; do
-    log "Attempt ${ATTEMPT}/${MAX_ATTEMPTS}: Querying target URL..."
+    log "Attempt ${ATTEMPT}/${MAX_ATTEMPTS}: Querying target deployment URL..."
     
     # Perform HTTP request and capture status code
-    # -s: Silent
-    # -L: Follow redirects
-    # -o /dev/null: Discard body
-    # -w "%{http_code}": Output HTTP status code
-    # --connect-timeout 5: Timeout after 5s
-    STATUS_CODE=$(curl -s -L -o /dev/null -w "%{http_code}" --connect-timeout 5 "$TARGET_URL" || echo "000")
+    STATUS_CODE=$(curl -s -L -A "$USER_AGENT" -o /dev/null -w "%{http_code}" --connect-timeout 5 "$TARGET_URL" || echo "000")
     
-    log "HTTP Status Code: ${STATUS_CODE}"
+    log "HTTP Response Status Code: ${BOLD}${STATUS_CODE}${RESET}"
     
     # 2xx (Success) and 3xx (Redirects) are considered healthy
     if [[ "$STATUS_CODE" =~ ^[23][0-9][0-9]$ ]]; then
-        success "Application is healthy! Received status ${STATUS_CODE}."
+        divider
+        success "Application is healthy and serving traffic! Response status: ${BOLD}${STATUS_CODE}${RESET}."
+        divider
         SUCCESS=true
         break
     else
-        warning "Application returned unhealthy status ${STATUS_CODE}. Retrying in ${DELAY_SECONDS} seconds..."
+        warning "Server returned status code (${STATUS_CODE}). Retrying in ${DELAY_SECONDS} seconds..."
         sleep $DELAY_SECONDS
         ATTEMPT=$((ATTEMPT + 1))
     fi
 done
 
 if [[ "$SUCCESS" = false ]]; then
-    error "Application health check failed after ${MAX_ATTEMPTS} attempts."
+    divider
+    error "Application health check verification failed after ${MAX_ATTEMPTS} attempts."
     
-    # Print diagnostic body details
-    log "Diagnostic Details (Response Body Snippet):"
+    # Print diagnostic response body snippet
+    log "Diagnostic Details (Server Response Body Snippet):"
     echo "--------------------------------------------------"
-    curl -s -L --connect-timeout 5 -m 10 "$TARGET_URL" | head -n 50 || echo "Failed to fetch response body."
+    curl -s -L -A "$USER_AGENT" --connect-timeout 5 -m 10 "$TARGET_URL" | head -n 50 || echo "Failed to fetch response body from server."
     echo "--------------------------------------------------"
+    divider
     
     exit 1
 fi

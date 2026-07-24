@@ -7,7 +7,7 @@
 # Production Deployment Package Builder
 #
 # Author  : Chann Labs Creative Studio
-# Version : 2.0.0
+# Version : 1.0.0
 #
 ##############################################################################
 
@@ -81,13 +81,10 @@ banner() {
 echo
 
 echo -e "${BOLD}${WHITE}"
-echo "╔══════════════════════════════════════════════════════╗"
-echo "║                                                      ║"
-echo "║        Laravel Shared Hosting Deploy v2             ║"
-echo "║                                                      ║"
-echo "║      Production Deployment Package Builder          ║"
-echo "║                                                      ║"
-echo "╚══════════════════════════════════════════════════════╝"
+echo "╔══════════════════════════════════════════════════════════════╗"
+echo "║              Laravel Deploy Shared Hosting                   ║"
+echo "║          Production Deployment Package Builder               ║"
+echo "╚══════════════════════════════════════════════════════════════╝"
 echo -e "${RESET}"
 
 echo
@@ -722,8 +719,7 @@ finish_build
 # Package Information
 ##############################################
 
-PACKAGE_TIMESTAMP=$(date +"%Y%m%d-%H%M%S")
-PACKAGE_NAME="deploy-${PACKAGE_TIMESTAMP}-${GIT_COMMIT}.zip"
+PACKAGE_NAME="deploy.zip"
 
 # Compute composer.lock hash for vendor caching
 COMPOSER_LOCK_HASH=""
@@ -756,7 +752,7 @@ generate_manifest() {
   "build_time": "${BUILD_TIME}",
   "package": "${PACKAGE_NAME}",
   "vendor_hash": "${COMPOSER_LOCK_HASH}",
-  "builder": "Laravel Shared Hosting Deploy v2"
+  "builder": "Laravel Shared Hosting Deploy v1"
 }
 EOF
 
@@ -803,7 +799,7 @@ build_summary() {
 
 generate_deploy_script() {
 
-    log "Generating deploy script..."
+    log "Generating deploy and unzip scripts..."
 
     # Read action path or fallback to current action path
     ACTION_PATH="${GITHUB_ACTION_PATH:-$(dirname "$0")/..}"
@@ -816,20 +812,22 @@ generate_deploy_script() {
 
     fi
 
-    cp \
-        "${ACTION_PATH}/scripts/deploy.php.template" \
-        "${DEPLOY_SCRIPT}"
+    cp "${ACTION_PATH}/scripts/deploy.php.template" "${DEPLOY_SCRIPT}"
+    cp "${ACTION_PATH}/scripts/deploy.php.template" "unzip.php"
 
     # Replace variables in the template
-    # Use | as delimiter to avoid path slash issues
-    sed -i "s|__DEPLOY_TOKEN__|${DEPLOY_TOKEN}|g" "${DEPLOY_SCRIPT}"
-    sed -i "s|__PACKAGE__|${PACKAGE_NAME}|g" "${DEPLOY_SCRIPT}"
-    sed -i "s|__VENDOR_HASH__|${COMPOSER_LOCK_HASH}|g" "${DEPLOY_SCRIPT}"
+    sed -i "s|__DEPLOY_TOKEN__|${DEPLOY_TOKEN:-}|g" "${DEPLOY_SCRIPT}"
+    sed -i "s|__DEPLOY_TOKEN__|${DEPLOY_TOKEN:-}|g" "unzip.php"
+    sed -i "s|__PACKAGE__|deploy.zip|g" "${DEPLOY_SCRIPT}"
+    sed -i "s|__PACKAGE__|deploy.zip|g" "unzip.php"
     sed -i "s|__RUN_MIGRATIONS__|${RUN_MIGRATIONS:-true}|g" "${DEPLOY_SCRIPT}"
+    sed -i "s|__RUN_MIGRATIONS__|${RUN_MIGRATIONS:-true}|g" "unzip.php"
     sed -i "s|__OPTIMIZE__|${OPTIMIZE:-true}|g" "${DEPLOY_SCRIPT}"
+    sed -i "s|__OPTIMIZE__|${OPTIMIZE:-true}|g" "unzip.php"
     sed -i "s|__MAINTENANCE__|${MAINTENANCE:-true}|g" "${DEPLOY_SCRIPT}"
+    sed -i "s|__MAINTENANCE__|${MAINTENANCE:-true}|g" "unzip.php"
 
-    success "deploy.php generated."
+    success "deploy.php and unzip.php generated."
 
 }
 
@@ -839,20 +837,42 @@ generate_deploy_script() {
 
 ZIP_EXCLUDES=(
     ".git/*"
+    "*/.git/*"
     ".github/*"
+    "*/.github/*"
+    ".agent"
+    ".agent/*"
+    "*/.agent/*"
+    "AGENT.md"
+    "agent.md"
+    ".antigravity*"
+    "*/.antigravity*"
+    ".gemini*"
+    "*/.gemini*"
+    ".vscode/*"
+    "*/.vscode/*"
+    ".idea/*"
+    "*/.idea/*"
     "node_modules/*"
+    "*/node_modules/*"
     "tests/*"
+    "*/tests/*"
     ".env"
     "storage/logs/*"
+    "*/storage/logs/*"
     "storage/framework/cache/data/*"
+    "*/storage/framework/cache/data/*"
     "storage/framework/views/*"
+    "*/storage/framework/views/*"
     "storage/framework/sessions/*"
+    "*/storage/framework/sessions/*"
     "bootstrap/cache/*"
-    "vendor/*"
+    "*/bootstrap/cache/*"
     "_backup_*"
-    "deploy-*.zip"
+    "deploy*.zip"
     "vendor-*.zip"
     "deploy.php"
+    "unzip.php"
 )
 
 build_zip_arguments() {
@@ -919,32 +939,21 @@ build_package() {
 
 verify_package() {
 
-    log "Verifying deployment archives..."
+    log "Verifying deployment archive..."
 
     if [[ ! -f "${PACKAGE_NAME}" ]]; then
 
-        error "App Package not found."
-
-        exit 1
-
-    fi
-
-    if [[ ! -f "${VENDOR_PACKAGE_NAME}" ]]; then
-
-        error "Vendor Package not found."
+        error "App Package (deploy.zip) not found."
 
         exit 1
 
     fi
 
     APP_SIZE=$(du -sh "${PACKAGE_NAME}" | cut -f1)
-    VENDOR_SIZE=$(du -sh "${VENDOR_PACKAGE_NAME}" | cut -f1)
 
-    info "App Archive Size    : ${APP_SIZE}"
-    info "Vendor Archive Size : ${VENDOR_SIZE}"
+    info "App Archive Size : ${APP_SIZE}"
 
     sha256sum "${PACKAGE_NAME}" >> "${CHECKSUM_FILE}"
-    sha256sum "${VENDOR_PACKAGE_NAME}" >> "${CHECKSUM_FILE}"
 
     success "Package verification completed."
 
@@ -957,7 +966,6 @@ verify_package() {
 generate_manifest
 generate_checksum
 generate_deploy_script
-build_vendor_package
 build_package
 verify_package
 build_summary

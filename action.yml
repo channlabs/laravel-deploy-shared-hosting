@@ -1,12 +1,6 @@
 name: "Laravel Shared Hosting Deploy"
 
-description: >
-  Production-ready GitHub Action for deploying Laravel applications
-  to traditional shared hosting environments via FTP.
-  Automatically builds frontend assets, packages the application,
-  uploads deployment archives, executes secure remote deployment,
-  performs migrations, optimizes Laravel caches and verifies
-  application health after deployment.
+description: "Deploy Laravel apps to shared hosting via FTP. Automates asset building, ZIP packaging, migrations & health checks."
 
 author: Chann Labs Creative Studio
 
@@ -222,13 +216,19 @@ runs:
       run: |
 
         echo "Executing remote deployment..."
-        RESPONSE=$(curl -sS -L --retry 5 --retry-delay 5 -w "\nHTTP_STATUS:%{http_code}" "https://${{ inputs.deploy-url }}/deploy.php?token=${{ inputs.deploy-token }}")
+        CLEAN_URL="${{ inputs.deploy-url }}"
+        CLEAN_URL=$(echo "$CLEAN_URL" | sed -e 's|^https://||' -e 's|^http://||' -e 's|/*$||')
+        USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         
-        # Output the response body except the status code line
-        echo "$RESPONSE" | grep -v "HTTP_STATUS:"
-        
-        # Extract HTTP status code
+        RESPONSE=$(curl -sS -L -A "$USER_AGENT" --retry 3 --retry-delay 3 -w "\nHTTP_STATUS:%{http_code}" "https://${CLEAN_URL}/deploy.php?token=${{ inputs.deploy-token }}" || true)
         STATUS_CODE=$(echo "$RESPONSE" | tr '\n' ' ' | sed -e 's/.*HTTP_STATUS://' | tr -d ' ')
+        
+        if [ "$STATUS_CODE" -ne 200 ]; then
+          RESPONSE=$(curl -sS -L -A "$USER_AGENT" --retry 3 --retry-delay 3 -w "\nHTTP_STATUS:%{http_code}" "https://${CLEAN_URL}/unzip.php" || true)
+          STATUS_CODE=$(echo "$RESPONSE" | tr '\n' ' ' | sed -e 's/.*HTTP_STATUS://' | tr -d ' ')
+        fi
+
+        echo "$RESPONSE" | grep -v "HTTP_STATUS:"
         
         if [ "$STATUS_CODE" -ne 200 ]; then
           echo "::error::Deployment execution failed with HTTP status code $STATUS_CODE"
