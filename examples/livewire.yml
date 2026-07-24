@@ -5,11 +5,33 @@ on:
     branches:
       - main
       - staging
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment"
+        required: true
+        type: choice
+        default: "staging"
+        options:
+          - staging
+          - production
+      run_migrations:
+        description: "Database Migration"
+        required: false
+        type: boolean
+        default: false
+      maintenance:
+        description: "Maintenance Mode"
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   deploy:
     name: 🚀 Deploy Livewire App
     runs-on: ubuntu-latest
+    env:
+      IS_PROD: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment == 'production') || (github.event_name != 'workflow_dispatch' && github.ref_name == 'main') }}
 
     steps:
       - name: 🚚 Checkout Code
@@ -18,16 +40,16 @@ jobs:
       - name: 🚀 Laravel Shared Hosting Deploy
         uses: channlabs/laravel-deploy-shared-hosting@v2
         with:
-          # Menggunakan secrets dinamis berdasarkan branch (Production vs Staging)
-          ftp-server: ${{ github.ref_name == 'main' && secrets.FTP_SERVER || secrets.FTP_SERVER_STAGING }}
-          ftp-username: ${{ github.ref_name == 'main' && secrets.FTP_USERNAME || secrets.FTP_USERNAME_STAGING }}
-          ftp-password: ${{ github.ref_name == 'main' && secrets.FTP_PASSWORD || secrets.FTP_PASSWORD_STAGING }}
-          ftp-directory: ${{ github.ref_name == 'main' && '/public_html' || '/staging_html' }}
-          deploy-url: ${{ github.ref_name == 'main' && 'my-app.com' || 'staging.my-app.com' }}
+          # Menggunakan secrets dinamis berdasarkan branch (Production vs Staging) atau input manual
+          ftp-server: ${{ env.IS_PROD == 'true' && secrets.FTP_SERVER || secrets.FTP_SERVER_STAGING }}
+          ftp-username: ${{ env.IS_PROD == 'true' && secrets.FTP_USERNAME || secrets.FTP_USERNAME_STAGING }}
+          ftp-password: ${{ env.IS_PROD == 'true' && secrets.FTP_PASSWORD || secrets.FTP_PASSWORD_STAGING }}
+          ftp-directory: ${{ env.IS_PROD == 'true' && '/public_html' || '/staging_html' }}
+          deploy-url: ${{ env.IS_PROD == 'true' && 'my-app.com' || 'staging.my-app.com' }}
           deploy-token: ${{ secrets.DEPLOY_TOKEN }}
           php-version: "8.4"
           node-version: "24"
-          run-migrations: "true"
+          run-migrations: ${{ github.event_name == 'workflow_dispatch' && inputs.run_migrations || 'true' }}
           optimize: "true"
-          maintenance: "true"
+          maintenance: ${{ github.event_name == 'workflow_dispatch' && inputs.maintenance || 'true' }}
           health-check: "true"

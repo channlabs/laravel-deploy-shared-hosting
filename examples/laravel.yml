@@ -4,11 +4,34 @@ on:
   push:
     branches:
       - main
+      - staging
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment"
+        required: true
+        type: choice
+        default: "staging"
+        options:
+          - staging
+          - production
+      run_migrations:
+        description: "Database Migration"
+        required: false
+        type: boolean
+        default: false
+      maintenance:
+        description: "Maintenance Mode"
+        required: false
+        type: boolean
+        default: true
 
 jobs:
   deploy:
     name: 🚀 Deploy to Shared Hosting
     runs-on: ubuntu-latest
+    env:
+      IS_PROD: ${{ (github.event_name == 'workflow_dispatch' && inputs.environment == 'production') || (github.event_name != 'workflow_dispatch' && github.ref_name == 'main') }}
 
     steps:
       - name: 🚚 Checkout Code
@@ -17,16 +40,16 @@ jobs:
       - name: 🚀 Laravel Shared Hosting Deploy
         uses: channlabs/laravel-deploy-shared-hosting@v2
         with:
-          ftp-server: ${{ secrets.FTP_SERVER }}
-          ftp-username: ${{ secrets.FTP_USERNAME }}
-          ftp-password: ${{ secrets.FTP_PASSWORD }}
-          ftp-directory: "/public_html" # Sesuaikan dengan folder root domain di cPanel
-          deploy-url: "my-laravel-app.com" # URL publik aplikasi
+          ftp-server: ${{ env.IS_PROD == 'true' && secrets.FTP_SERVER || secrets.FTP_SERVER_STAGING }}
+          ftp-username: ${{ env.IS_PROD == 'true' && secrets.FTP_USERNAME || secrets.FTP_USERNAME_STAGING }}
+          ftp-password: ${{ env.IS_PROD == 'true' && secrets.FTP_PASSWORD || secrets.FTP_PASSWORD_STAGING }}
+          ftp-directory: ${{ env.IS_PROD == 'true' && '/public_html' || '/staging_html' }} # Sesuaikan dengan folder root domain di cPanel
+          deploy-url: ${{ env.IS_PROD == 'true' && 'my-laravel-app.com' || 'staging.my-laravel-app.com' }} # URL publik aplikasi
           deploy-token: ${{ secrets.DEPLOY_TOKEN }} # Token aman buatan sendiri (misal SHA256/UUID)
           php-version: "8.4"
           node-version: "24"
           pnpm-version: "10"
-          run-migrations: "true"
+          run-migrations: ${{ github.event_name == 'workflow_dispatch' && inputs.run_migrations || 'true' }}
           optimize: "true"
-          maintenance: "true"
+          maintenance: ${{ github.event_name == 'workflow_dispatch' && inputs.maintenance || 'true' }}
           health-check: "true"
